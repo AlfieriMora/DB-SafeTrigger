@@ -1,0 +1,49 @@
+/**
+ * DB-SafeTrigger Admin Styles
+ *
+ * @package DB_SafeTrigger
+ * @since 1.0.0
+ */
+
+.dbst-status-card {
+    background: white;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.dbst-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.dbst-status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.dbst-status-item:last-child {
+    border-bottom: none;
+}
+
+.dbst-status-ok {
+    color: #2271b1;
+    font-weight: 600;
+}
+
+.dbst-status-error {
+    color: #d63638;
+    font-weight: 600;
+}
+
+.dbst-status-warning {
+    color: #dba617;
+    font-weight: 600;
+}
