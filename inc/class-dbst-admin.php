@@ -475,55 +475,202 @@ class DBST_Admin {
     }
     
     /**
-     * Tab de logs recientes
+     * Tab de logs recientes con información de usuario WordPress
      */
     private function logs_tab() {
         global $wpdb;
         
-        $logs = $wpdb->get_results("
-            SELECT id, event_time, table_name, action, pk_value, db_user, client_host
-            FROM log_auditoria 
-            ORDER BY id DESC 
+        // Obtener filtros
+        $user_filter = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+        $action_filter = isset($_GET['action_filter']) ? sanitize_text_field($_GET['action_filter']) : '';
+        $table_filter = isset($_GET['table_filter']) ? sanitize_text_field($_GET['table_filter']) : '';
+        
+        // Construir WHERE clause
+        $where_conditions = array('1=1');
+        $where_params = array();
+        
+        if ($user_filter > 0) {
+            $where_conditions[] = 'l.wp_user_id = %d';
+            $where_params[] = $user_filter;
+        }
+        
+        if (!empty($action_filter)) {
+            $where_conditions[] = 'l.action = %s';
+            $where_params[] = $action_filter;
+        }
+        
+        if (!empty($table_filter)) {
+            $where_conditions[] = 'l.table_name LIKE %s';
+            $where_params[] = '%' . $table_filter . '%';
+        }
+        
+        $where_clause = implode(' AND ', $where_conditions);
+        
+        // Query optimizada con JOIN a wp_users
+        $query = "
+            SELECT 
+                l.id, 
+                l.event_time, 
+                l.table_name, 
+                l.action, 
+                l.pk_value, 
+                l.db_user,
+                l.wp_user_id,
+                l.client_host,
+                u.user_login,
+                u.display_name,
+                u.user_email
+            FROM log_auditoria l
+            LEFT JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
+            WHERE $where_clause
+            ORDER BY l.id DESC 
             LIMIT 50
+        ";
+        
+        if (!empty($where_params)) {
+            $logs = $wpdb->get_results($wpdb->prepare($query, $where_params));
+        } else {
+            $logs = $wpdb->get_results($query);
+        }
+        
+        // Obtener usuarios para filtro
+        $users_with_logs = $wpdb->get_results("
+            SELECT DISTINCT u.ID, u.user_login, u.display_name
+            FROM log_auditoria l
+            INNER JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
+            ORDER BY u.display_name
         ");
+        
         ?>
         <div class="dbst-status-card">
             <h2>📋 Logs de Auditoría Recientes</h2>
             
+            <!-- Filtros -->
+            <div class="dbst-filters" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px;">
+                <form method="get" style="display: flex; gap: 15px; align-items: end; flex-wrap: wrap;">
+                    <input type="hidden" name="page" value="db-safetrigger">
+                    <input type="hidden" name="tab" value="logs">
+                    
+                    <div>
+                        <label for="user_id"><strong>Usuario:</strong></label><br>
+                        <select name="user_id" id="user_id">
+                            <option value="0">Todos los usuarios</option>
+                            <?php foreach($users_with_logs as $user): ?>
+                                <option value="<?php echo $user->ID; ?>" <?php selected($user_filter, $user->ID); ?>>
+                                    <?php echo esc_html($user->display_name . ' (' . $user->user_login . ')'); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="action_filter"><strong>Acción:</strong></label><br>
+                        <select name="action_filter" id="action_filter">
+                            <option value="">Todas las acciones</option>
+                            <option value="UPDATE" <?php selected($action_filter, 'UPDATE'); ?>>UPDATE</option>
+                            <option value="DELETE" <?php selected($action_filter, 'DELETE'); ?>>DELETE</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="table_filter"><strong>Tabla:</strong></label><br>
+                        <select name="table_filter" id="table_filter">
+                            <option value="">Todas las tablas</option>
+                            <option value="posts" <?php selected($table_filter, 'posts'); ?>>Posts</option>
+                            <option value="users" <?php selected($table_filter, 'users'); ?>>Users</option>
+                            <option value="comments" <?php selected($table_filter, 'comments'); ?>>Comments</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <button type="submit" class="button button-primary">Filtrar</button>
+                        <a href="?page=db-safetrigger&tab=logs" class="button">Limpiar filtros</a>
+                    </div>
+                </form>
+            </div>
+            
             <?php if(empty($logs)): ?>
-                <p>No hay registros de auditoría disponibles.</p>
+                <p>No hay registros de auditoría disponibles con los filtros seleccionados.</p>
             <?php else: ?>
-                <table class="dbst-log-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Fecha/Hora</th>
-                            <th>Tabla</th>
-                            <th>Acción</th>
-                            <th>PK</th>
-                            <th>Usuario BD</th>
-                            <th>Host</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach($logs as $log): ?>
-                        <tr>
-                            <td><?php echo $log->id; ?></td>
-                            <td><?php echo $log->event_time; ?></td>
-                            <td><?php echo esc_html($log->table_name); ?></td>
-                            <td>
-                                <span style="color: <?php echo $log->action === 'DELETE' ? '#d63638' : '#2271b1'; ?>">
-                                    <?php echo $log->action; ?>
-                                </span>
-                            </td>
-                            <td><?php echo esc_html($log->pk_value); ?></td>
-                            <td><?php echo esc_html($log->db_user); ?></td>
-                            <td><?php echo esc_html($log->client_host); ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                <div style="overflow-x: auto;">
+                    <table class="dbst-log-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Fecha/Hora</th>
+                                <th>Usuario WordPress</th>
+                                <th>Tabla</th>
+                                <th>Acción</th>
+                                <th>PK</th>
+                                <th>Usuario BD</th>
+                                <th>Host</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach($logs as $log): ?>
+                            <tr>
+                                <td><?php echo $log->id; ?></td>
+                                <td><?php echo $log->event_time; ?></td>
+                                <td>
+                                    <?php if($log->wp_user_id): ?>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <?php echo get_avatar($log->wp_user_id, 24, '', '', array('class' => 'dbst-user-avatar')); ?>
+                                            <div>
+                                                <strong><?php echo esc_html($log->display_name ?: $log->user_login); ?></strong><br>
+                                                <small style="color: #666;"><?php echo esc_html($log->user_login); ?></small>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <span style="color: #999; font-style: italic;">Sistema/No identificado</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <span class="dbst-table-name">
+                                        <?php echo esc_html(str_replace($wpdb->prefix, '', $log->table_name)); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span style="color: <?php echo $log->action === 'DELETE' ? '#d63638' : '#2271b1'; ?>; font-weight: 600;">
+                                        <?php echo $log->action; ?>
+                                    </span>
+                                </td>
+                                <td><?php echo esc_html($log->pk_value); ?></td>
+                                <td><small><?php echo esc_html($log->db_user); ?></small></td>
+                                <td><small><?php echo esc_html($log->client_host); ?></small></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <p style="margin-top: 15px; color: #666;">
+                    <small>Mostrando los últimos <?php echo count($logs); ?> registros que coinciden con los filtros.</small>
+                </p>
             <?php endif; ?>
+            
+            <style>
+            .dbst-user-avatar {
+                border-radius: 50%;
+                vertical-align: middle;
+            }
+            .dbst-table-name {
+                font-family: monospace;
+                background: #f0f0f1;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            .dbst-filters select {
+                min-width: 150px;
+            }
+            .dbst-log-table {
+                font-size: 13px;
+            }
+            .dbst-log-table td {
+                vertical-align: top;
+                padding: 12px 8px;
+            }
+            </style>
         </div>
         <?php
     }

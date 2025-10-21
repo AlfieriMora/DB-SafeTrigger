@@ -64,7 +64,7 @@ class DBST_Installer {
         $fields = $this->get_table_fields($table_name);
         $old_data_json = $this->build_old_data_json($fields);
         
-        // Crear el trigger
+        // Crear el trigger con soporte para usuario WordPress
         $trigger_sql = "
         CREATE TRIGGER `$trigger_name`
         BEFORE $action ON `$prefixed_table`
@@ -73,6 +73,7 @@ class DBST_Installer {
             INSERT INTO log_auditoria (
                 event_time,
                 db_user,
+                wp_user_id,
                 table_name,
                 action,
                 pk_value,
@@ -81,6 +82,7 @@ class DBST_Installer {
             ) VALUES (
                 NOW(),
                 CURRENT_USER(),
+                @wp_current_user_id,
                 '$prefixed_table',
                 '$action',
                 OLD.{$this->get_primary_key($table_name)},

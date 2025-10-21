@@ -68,6 +68,7 @@ class DB_SafeTrigger_Activator {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             event_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             db_user VARCHAR(128),
+            wp_user_id BIGINT UNSIGNED NULL,
             table_name VARCHAR(128) NOT NULL,
             action ENUM('UPDATE','DELETE') NOT NULL,
             pk_value VARCHAR(64) NOT NULL,
@@ -75,7 +76,8 @@ class DB_SafeTrigger_Activator {
             client_host VARCHAR(255),
             PRIMARY KEY (id),
             KEY idx_table_time (table_name, event_time),
-            KEY idx_action_time (action, event_time)
+            KEY idx_action_time (action, event_time),
+            KEY idx_wp_user_time (wp_user_id, event_time)
         ) ENGINE=InnoDB $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
