@@ -61,8 +61,8 @@ class DB_SafeTrigger_Activator {
         $supports_json = self::check_json_support();
         $old_data_type = $supports_json ? 'JSON' : 'LONGTEXT';
         
-        // Tabla log_auditoria (SIN prefijo según especificación)
-        $table_name = 'log_auditoria';
+        // Tabla BD_SafeTrigger (CON prefijo de WordPress)
+        $table_name = $wpdb->prefix . 'BD_SafeTrigger';
         
         $sql = "CREATE TABLE $table_name (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

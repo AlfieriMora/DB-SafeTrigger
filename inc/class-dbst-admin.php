@@ -232,7 +232,7 @@ class DBST_Admin {
                 <div>
                     <h3>Base de Datos</h3>
                     <div class="dbst-status-item">
-                        <span>Tabla log_auditoria:</span>
+                        <span>Tabla {$audit_table}:</span>
                         <span class="<?php echo $system_status['table_exists'] ? 'dbst-status-ok' : 'dbst-status-error'; ?>">
                             <?php echo $system_status['table_exists'] ? '✅ Existe' : '❌ No existe'; ?>
                         </span>
@@ -479,6 +479,7 @@ class DBST_Admin {
      */
     private function logs_tab() {
         global $wpdb;
+        $audit_table = $wpdb->prefix . 'BD_SafeTrigger';
         
         // Obtener filtros
         $user_filter = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
@@ -520,7 +521,7 @@ class DBST_Admin {
                 u.user_login,
                 u.display_name,
                 u.user_email
-            FROM log_auditoria l
+            FROM `{$audit_table}` l
             LEFT JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
             WHERE $where_clause
             ORDER BY l.id DESC 
@@ -536,7 +537,7 @@ class DBST_Admin {
         // Obtener usuarios para filtro
         $users_with_logs = $wpdb->get_results("
             SELECT DISTINCT u.ID, u.user_login, u.display_name
-            FROM log_auditoria l
+            FROM `{$audit_table}` l
             INNER JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
             ORDER BY u.display_name
         ");
@@ -680,9 +681,11 @@ class DBST_Admin {
      */
     private function get_system_status() {
         global $wpdb;
+        $audit_table = $wpdb->prefix . 'BD_SafeTrigger';
         
         // Verificar tabla
-        $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'log_auditoria'") === 'log_auditoria';
+        $audit_table = $wpdb->prefix . 'BD_SafeTrigger';
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
         
         // Verificar triggers
         $triggers = array(
@@ -714,7 +717,7 @@ class DBST_Admin {
         if($table_exists) {
             $today_events = $wpdb->get_var("
                 SELECT COUNT(*) 
-                FROM log_auditoria 
+                FROM `{$audit_table}` 
                 WHERE DATE(event_time) = CURDATE()
             ");
         }

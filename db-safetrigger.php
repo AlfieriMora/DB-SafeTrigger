@@ -3,7 +3,7 @@
  * Plugin Name: DB-SafeTrigger
  * Description: Plugin de Trazabilidad y Auditoría a Nivel de Base de Datos para WordPress con Mailjet v3.1
  * Version: 1.1.0
- * Author: Alfieri Mora
+ * Author: Alfieri Mora | Kriscia Campos | Ernesto Valerio | Eddy Alfaro
  * Text Domain: db-safetrigger
  */
 
@@ -15,6 +15,16 @@ if (!defined('ABSPATH')) {
 // Definir constantes
 define('DB_SAFETRIGGER_VERSION', '1.1.0');
 define('DB_SAFETRIGGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
+
+/**
+ * Obtener nombre completo de la tabla de auditoría con prefijo de WordPress
+ *
+ * @return string Nombre completo de la tabla
+ */
+function dbst_get_audit_table_name() {
+    global $wpdb;
+    return $wpdb->prefix . 'BD_SafeTrigger';
+}
 
 // Hooks de activación
 register_activation_hook(__FILE__, 'dbst_activate_plugin');
@@ -35,7 +45,7 @@ function dbst_activate_plugin() {
     // Fallback: crear tabla básica si no existe activador
     global $wpdb;
     $charset_collate = $wpdb->get_charset_collate();
-    $table_name = 'log_auditoria';
+    $table_name = dbst_get_audit_table_name();
     
     $sql = "CREATE TABLE IF NOT EXISTS $table_name (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -55,6 +65,9 @@ function dbst_activate_plugin() {
     
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
     dbDelta($sql);
+    
+    // Migrar datos de tabla antigua si existe
+    dbst_migrate_old_table();
     
     // Configuraciones básicas
     add_option('db_safetrigger_version', '1.1.0');
@@ -139,6 +152,51 @@ function dbst_admin_page() {
                     $message = '⏸️ Reporte diario desactivado.';
                 }
                 $message_type = 'success';
+                break;
+                
+            case 'save_report_config':
+                if (current_user_can('manage_options')) {
+                    $daily_enabled = isset($_POST['daily_enabled']) ? 1 : 0;
+                    $frequency = sanitize_text_field($_POST['report_frequency']);
+                    $time = sanitize_text_field($_POST['report_time']);
+                    $recipients = sanitize_textarea_field($_POST['report_recipients']);
+                    $include_summary = isset($_POST['include_summary']) ? 1 : 0;
+                    $include_details = isset($_POST['include_details']) ? 1 : 0;
+                    
+                    update_option('dbst_daily_report_enabled', $daily_enabled);
+                    update_option('dbst_report_frequency', $frequency);
+                    update_option('dbst_report_time', $time);
+                    update_option('dbst_report_recipients', $recipients);
+                    update_option('dbst_report_include_summary', $include_summary);
+                    update_option('dbst_report_include_details', $include_details);
+                    
+                    // Reprogramar el cron si está activado
+                    wp_clear_scheduled_hook('dbst_daily_audit_report');
+                    if ($daily_enabled) {
+                        $schedule_time = strtotime("today $time");
+                        if ($schedule_time < time()) {
+                            $schedule_time += DAY_IN_SECONDS; // Programar para mañana
+                        }
+                        wp_schedule_event($schedule_time, $frequency, 'dbst_daily_audit_report');
+                    }
+                    
+                    $message = '✅ Configuración de reportes guardada correctamente.';
+                    $message_type = 'success';
+                } else {
+                    $message = '❌ No tienes permisos para realizar esta acción.';
+                    $message_type = 'error';
+                }
+                break;
+                
+            case 'send_instant_report':
+                if (current_user_can('manage_options')) {
+                    $result = dbst_send_instant_audit_report();
+                    $message = $result['message'];
+                    $message_type = $result['success'] ? 'success' : 'error';
+                } else {
+                    $message = '❌ No tienes permisos para realizar esta acción.';
+                    $message_type = 'error';
+                }
                 break;
         }
     }
@@ -225,11 +283,12 @@ function dbst_status_tab() {
     global $wpdb;
     
     // Verificar tabla de auditoría
-    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'log_auditoria'") === 'log_auditoria';
+    $audit_table = dbst_get_audit_table_name();
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
     
     // Estadísticas
-    $total_logs = $table_exists ? $wpdb->get_var("SELECT COUNT(*) FROM log_auditoria") : 0;
-    $logs_today = $table_exists ? $wpdb->get_var("SELECT COUNT(*) FROM log_auditoria WHERE DATE(event_time) = CURDATE()") : 0;
+    $total_logs = $table_exists ? $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table`") : 0;
+    $logs_today = $table_exists ? $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE DATE(event_time) = CURDATE()") : 0;
     
     // Verificar triggers
     $triggers = $wpdb->get_results("SHOW TRIGGERS");
@@ -293,59 +352,167 @@ function dbst_triggers_tab($nonce) {
     $triggers = $wpdb->get_results("SHOW TRIGGERS");
     $db_triggers = array_filter($triggers, function($t) { return strpos($t->Trigger, 'trg_') === 0; });
     
+    // Obtener estadísticas de tablas monitoreadas
+    $audit_table = dbst_get_audit_table_name();
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
+    
+    $monitored_tables = array('posts', 'users', 'comments');
+    $table_stats = array();
+    
+    foreach ($monitored_tables as $table) {
+        $prefixed_table = $wpdb->prefix . $table;
+        $table_stats[$table] = array(
+            'exists' => $wpdb->get_var("SHOW TABLES LIKE '$prefixed_table'") === $prefixed_table,
+            'triggers' => 0,
+            'events_today' => 0
+        );
+        
+        // Contar triggers para esta tabla
+        foreach ($db_triggers as $trigger) {
+            if (strpos($trigger->Trigger, "trg_{$table}_") === 0) {
+                $table_stats[$table]['triggers']++;
+            }
+        }
+        
+        // Contar eventos de hoy
+        if ($table_exists) {
+            $table_stats[$table]['events_today'] = $wpdb->get_var("
+                SELECT COUNT(*) 
+                FROM `$audit_table` 
+                WHERE table_name LIKE '%{$table}%' 
+                AND DATE(event_time) = CURDATE()
+            ");
+        }
+    }
+    
     ?>
     <div class="dbst-card">
-        <h2>🔧 Gestión de Triggers</h2>
-        <p>Administra los triggers de auditoría para las tablas de WordPress.</p>
+        <h2>🔧 Gestión de Triggers de Auditoría</h2>
+        <p>Administra y monitorea los triggers automáticos para la trazabilidad de datos.</p>
         
-        <div style="background: #e7f3ff; padding: 15px; border-left: 4px solid #2196f3; margin: 15px 0;">
-            <h4>📝 Información sobre Triggers</h4>
-            <p>Los triggers se crean automáticamente para las tablas <code>posts</code>, <code>users</code> y <code>comments</code>.</p>
-            <p><strong>Eventos monitoreados:</strong> UPDATE y DELETE</p>
-            <p><strong>Información capturada:</strong> Usuario WordPress, timestamp, tabla, acción y datos modificados.</p>
-        </div>
-        
-        <div style="display: flex; gap: 10px; margin: 20px 0;">
-            <a href="?page=db-safetrigger&tab=triggers&action=create_triggers&_wpnonce=<?php echo $nonce; ?>" 
-               class="button button-primary">
-                🚀 Crear/Actualizar Triggers
-            </a>
-            
-            <?php if (count($db_triggers) > 0): ?>
-                <a href="?page=db-safetrigger&tab=triggers&action=delete_triggers&_wpnonce=<?php echo $nonce; ?>" 
-                   class="button button-secondary"
-                   onclick="return confirm('¿Estás seguro de eliminar todos los triggers?')">
-                    🗑️ Eliminar Triggers
-                </a>
-            <?php endif; ?>
-        </div>
-        
-        <?php if (count($db_triggers) > 0): ?>
-            <h3>📋 Triggers Actuales</h3>
-            <table class="wp-list-table widefat fixed striped">
-                <thead>
-                    <tr>
-                        <th>Nombre del Trigger</th>
-                        <th>Tabla</th>
-                        <th>Evento</th>
-                        <th>Timing</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($db_triggers as $trigger): ?>
-                        <tr>
-                            <td><code><?php echo esc_html($trigger->Trigger); ?></code></td>
-                            <td><strong><?php echo esc_html($trigger->Table); ?></strong></td>
-                            <td><span class="dashicons dashicons-<?php echo $trigger->Event === 'UPDATE' ? 'edit' : 'trash'; ?>"></span> <?php echo esc_html($trigger->Event); ?></td>
-                            <td><?php echo esc_html($trigger->Timing); ?></td>
-                        </tr>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
+            <!-- Panel de Control -->
+            <div style="background: #f9f9f9; padding: 20px; border-radius: 6px;">
+                <h3 style="margin-top: 0;">⚡ Control de Triggers</h3>
+                
+                <div style="margin: 15px 0;">
+                    <a href="?page=db-safetrigger&tab=triggers&action=create_triggers&_wpnonce=<?php echo $nonce; ?>" 
+                       class="button button-primary" style="margin-right: 10px;">
+                        🚀 Crear/Actualizar Triggers
+                    </a>
+                    
+                    <?php if (count($db_triggers) > 0): ?>
+                        <a href="?page=db-safetrigger&tab=triggers&action=delete_triggers&_wpnonce=<?php echo $nonce; ?>" 
+                           class="button button-secondary"
+                           onclick="return confirm('¿Estás seguro de eliminar todos los triggers?\n\nEsta acción detendrá el monitoreo de auditoría.')">
+                            🗑️ Eliminar Todos
+                        </a>
+                    <?php endif; ?>
+                </div>
+
+                <div style="background: #e8f4fd; padding: 15px; border-radius: 6px; margin-top: 15px;">
+                    <h4 style="margin: 0 0 10px 0; color: #1976d2;">📋 Información</h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #555;">
+                        <li><strong>Tablas monitoreadas:</strong> posts, users, comments</li>
+                        <li><strong>Eventos detectados:</strong> UPDATE y DELETE</li>
+                        <li><strong>Datos capturados:</strong> Usuario, timestamp, cambios</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Panel de Estadísticas -->
+            <div style="background: #f9f9f9; padding: 20px; border-radius: 6px;">
+                <h3 style="margin-top: 0;">📊 Estado de Monitoreo</h3>
+                
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0;">
+                    <?php foreach ($monitored_tables as $table): 
+                        $stats = $table_stats[$table];
+                        $is_active = $stats['exists'] && $stats['triggers'] >= 2;
+                        
+                        $table_icons = array(
+                            'posts' => '📝',
+                            'users' => '👥', 
+                            'comments' => '💬'
+                        );
+                    ?>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; text-align: center; border: 2px solid <?php echo $is_active ? '#28a745' : '#dc3545'; ?>;">
+                            <div style="font-size: 20px; margin-bottom: 5px;">
+                                <?php echo $table_icons[$table]; ?>
+                            </div>
+                            <div style="font-weight: 600; text-transform: capitalize; font-size: 12px;">
+                                <?php echo $table; ?>
+                            </div>
+                            <div style="font-size: 10px; color: #666; margin: 3px 0;">
+                                <?php echo $stats['triggers']; ?>/2 triggers
+                            </div>
+                            <div style="font-size: 11px; font-weight: 600; color: <?php echo $is_active ? '#28a745' : '#dc3545'; ?>;">
+                                <?php echo $is_active ? '✅ Activo' : '❌ Inactivo'; ?>
+                            </div>
+                            <?php if ($stats['events_today'] > 0): ?>
+                                <div style="font-size: 9px; color: #007cba; margin-top: 3px;">
+                                    <?php echo $stats['events_today']; ?> eventos hoy
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     <?php endforeach; ?>
-                </tbody>
-            </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de Triggers -->
+        <?php if (count($db_triggers) > 0): ?>
+            <h3>📋 Triggers Configurados</h3>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 4px;">
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 35%;">Nombre del Trigger</th>
+                            <th style="width: 20%;">Tabla</th>
+                            <th style="width: 20%;">Evento</th>
+                            <th style="width: 15%;">Timing</th>
+                            <th style="width: 10%;">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($db_triggers as $trigger): ?>
+                            <tr>
+                                <td>
+                                    <code style="background: #f1f3f4; padding: 4px 6px; border-radius: 3px; font-size: 12px;">
+                                        <?php echo esc_html($trigger->Trigger); ?>
+                                    </code>
+                                </td>
+                                <td>
+                                    <strong><?php echo esc_html($trigger->Table); ?></strong>
+                                </td>
+                                <td>
+                                    <span style="padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: <?php echo $trigger->Event === 'UPDATE' ? '#e3f2fd' : '#ffebee'; ?>; color: <?php echo $trigger->Event === 'UPDATE' ? '#1976d2' : '#d32f2f'; ?>;">
+                                        <?php echo $trigger->Event === 'UPDATE' ? '✏️ UPDATE' : '🗑️ DELETE'; ?>
+                                    </span>
+                                </td>
+                                <td style="font-family: monospace; color: #666; font-size: 12px;">
+                                    <?php echo esc_html($trigger->Timing); ?>
+                                </td>
+                                <td>
+                                    <span style="color: #28a745; font-weight: 600; font-size: 12px;">
+                                        ✅ Activo
+                                    </span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         <?php else: ?>
-            <div style="background: #fff3cd; padding: 15px; border-left: 4px solid #ff9800;">
-                <h4>⚠️ No hay triggers configurados</h4>
-                <p>Haz clic en "Crear/Actualizar Triggers" para configurar el sistema de auditoría.</p>
+            <div style="text-align: center; padding: 40px; background: #f9f9f9; border-radius: 6px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+                <h3 style="color: #ff9800; margin-bottom: 15px;">No hay triggers configurados</h3>
+                <p style="color: #666; margin-bottom: 25px;">
+                    El sistema de auditoría no está activo. Configura los triggers para comenzar el monitoreo.
+                </p>
+                <a href="?page=db-safetrigger&tab=triggers&action=create_triggers&_wpnonce=<?php echo $nonce; ?>" 
+                   class="button button-primary">
+                    🚀 Configurar Triggers Ahora
+                </a>
             </div>
         <?php endif; ?>
     </div>
@@ -372,70 +539,145 @@ function dbst_mailjet_tab() {
     $from_name = get_option('dbst_mailjet_from_name', '');
     $recipients = get_option('dbst_report_recipients', '');
     
+    // Verificar configuración
+    $has_config = !empty($api_key) && !empty($secret_key) && !empty($from_email);
+    $recipient_count = count(array_filter(array_map('trim', explode("\n", $recipients))));
+    
     ?>
     <div class="dbst-card">
         <h2>📧 Configuración de Mailjet</h2>
-        <p>Configura las credenciales de Mailjet para el envío de reportes por email.</p>
-        
-        <form method="post">
-            <?php wp_nonce_field('dbst_mailjet'); ?>
-            
-            <table class="form-table">
-                <tr>
-                    <th scope="row">
-                        <label for="api_key">API Key</label>
-                    </th>
-                    <td>
-                        <input type="text" id="api_key" name="api_key" value="<?php echo esc_attr($api_key); ?>" class="regular-text" />
-                        <p class="description">Tu API Key de Mailjet</p>
-                    </td>
-                </tr>
+        <p>Configura el sistema de envío de reportes por email usando Mailjet API.</p>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin: 20px 0;">
+            <!-- Panel de Configuración -->
+            <div style="background: #f9f9f9; padding: 20px; border-radius: 6px;">
+                <h3 style="margin-top: 0;">⚙️ Credenciales de API</h3>
                 
-                <tr>
-                    <th scope="row">
-                        <label for="secret_key">Secret Key</label>
-                    </th>
-                    <td>
-                        <input type="password" id="secret_key" name="secret_key" value="<?php echo esc_attr($secret_key); ?>" class="regular-text" />
-                        <p class="description">Tu Secret Key de Mailjet</p>
-                    </td>
-                </tr>
+                <form method="post">
+                    <?php wp_nonce_field('dbst_mailjet'); ?>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label for="api_key" style="display: block; font-weight: 600; margin-bottom: 5px;">🔑 API Key</label>
+                        <input type="text" 
+                               id="api_key" 
+                               name="api_key" 
+                               value="<?php echo esc_attr($api_key); ?>" 
+                               placeholder="Ingresa tu API Key de Mailjet"
+                               style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" />
+                        <small style="color: #666;">Obtén tu API Key desde tu panel de Mailjet</small>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="secret_key" style="display: block; font-weight: 600; margin-bottom: 5px;">🔐 Secret Key</label>
+                        <input type="password" 
+                               id="secret_key" 
+                               name="secret_key" 
+                               value="<?php echo esc_attr($secret_key); ?>" 
+                               placeholder="Ingresa tu Secret Key de Mailjet"
+                               style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" />
+                        <small style="color: #666;">Tu Secret Key privada (mantenida en secreto)</small>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="from_email" style="display: block; font-weight: 600; margin-bottom: 5px;">📤 Email Remitente</label>
+                        <input type="email" 
+                               id="from_email" 
+                               name="from_email" 
+                               value="<?php echo esc_attr($from_email); ?>" 
+                               placeholder="noreply@tudominio.com"
+                               style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" />
+                        <small style="color: #666;">Email desde el cual se enviarán los reportes</small>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="from_name" style="display: block; font-weight: 600; margin-bottom: 5px;">👤 Nombre del Remitente</label>
+                        <input type="text" 
+                               id="from_name" 
+                               name="from_name" 
+                               value="<?php echo esc_attr($from_name); ?>" 
+                               placeholder="DB-SafeTrigger"
+                               style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" />
+                        <small style="color: #666;">Nombre que aparecerá como remitente</small>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label for="recipients" style="display: block; font-weight: 600; margin-bottom: 5px;">📋 Destinatarios de Reportes</label>
+                        <textarea id="recipients" 
+                                  name="recipients" 
+                                  rows="4" 
+                                  placeholder="admin@tudominio.com&#10;usuario@tudominio.com&#10;otro@tudominio.com"
+                                  style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;"><?php echo esc_textarea($recipients); ?></textarea>
+                        <small style="color: #666;">Un email por línea. Estos usuarios recibirán los reportes automáticos</small>
+                    </div>
+
+                    <button type="submit" name="save_mailjet" class="button button-primary">
+                        💾 Guardar Configuración
+                    </button>
+                </form>
+            </div>
+
+            <!-- Panel de Estado -->
+            <div style="background: #f9f9f9; padding: 20px; border-radius: 6px;">
+                <h3 style="margin-top: 0;">📊 Estado de la Configuración</h3>
                 
-                <tr>
-                    <th scope="row">
-                        <label for="from_email">Email Remitente</label>
-                    </th>
-                    <td>
-                        <input type="email" id="from_email" name="from_email" value="<?php echo esc_attr($from_email); ?>" class="regular-text" />
-                        <p class="description">Email desde el cual se enviarán los reportes</p>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="from_name">Nombre Remitente</label>
-                    </th>
-                    <td>
-                        <input type="text" id="from_name" name="from_name" value="<?php echo esc_attr($from_name); ?>" class="regular-text" />
-                        <p class="description">Nombre que aparecerá como remitente</p>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="recipients">Destinatarios</label>
-                    </th>
-                    <td>
-                        <textarea id="recipients" name="recipients" rows="4" class="large-text"><?php echo esc_textarea($recipients); ?></textarea>
-                        <p class="description">Un email por línea. Estos usuarios recibirán los reportes.</p>
-                    </td>
-                </tr>
-            </table>
-            
-            <p class="submit">
-                <input type="submit" name="save_mailjet" class="button-primary" value="💾 Guardar Configuración" />
-            </p>
-        </form>
+                <div style="margin-bottom: 15px;">
+                    <div style="background: <?php echo !empty($api_key) ? '#e8f5e8' : '#f8e8e8'; ?>; padding: 15px; border-radius: 6px; text-align: center; border: 2px solid <?php echo !empty($api_key) ? '#28a745' : '#dc3545'; ?>;">
+                        <div style="font-size: 20px; margin-bottom: 5px;">
+                            <?php echo !empty($api_key) ? '✅' : '❌'; ?>
+                        </div>
+                        <div style="font-weight: 600; font-size: 14px;">API Key</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            <?php echo !empty($api_key) ? 'Configurada' : 'No configurada'; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <div style="background: <?php echo !empty($secret_key) ? '#e8f5e8' : '#f8e8e8'; ?>; padding: 15px; border-radius: 6px; text-align: center; border: 2px solid <?php echo !empty($secret_key) ? '#28a745' : '#dc3545'; ?>;">
+                        <div style="font-size: 20px; margin-bottom: 5px;">
+                            <?php echo !empty($secret_key) ? '🔐' : '❌'; ?>
+                        </div>
+                        <div style="font-weight: 600; font-size: 14px;">Secret Key</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            <?php echo !empty($secret_key) ? 'Configurada' : 'No configurada'; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <div style="background: <?php echo !empty($from_email) ? '#e8f5e8' : '#fff8e1'; ?>; padding: 15px; border-radius: 6px; text-align: center; border: 2px solid <?php echo !empty($from_email) ? '#28a745' : '#ffc107'; ?>;">
+                        <div style="font-size: 20px; margin-bottom: 5px;">
+                            <?php echo !empty($from_email) ? '📤' : '⚠️'; ?>
+                        </div>
+                        <div style="font-weight: 600; font-size: 14px;">Email Remitente</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            <?php echo !empty($from_email) ? 'Configurado' : 'Opcional'; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <div style="background: <?php echo $recipient_count > 0 ? '#e8f5e8' : '#fff8e1'; ?>; padding: 15px; border-radius: 6px; text-align: center; border: 2px solid <?php echo $recipient_count > 0 ? '#28a745' : '#ffc107'; ?>;">
+                        <div style="font-size: 20px; margin-bottom: 5px;">
+                            📋
+                        </div>
+                        <div style="font-weight: 600; font-size: 14px;">Destinatarios</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            <?php echo $recipient_count; ?> configurados
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 15px; background: <?php echo $has_config ? '#e8f5e8' : '#f8e8e8'; ?>; border-radius: 6px; text-align: center; border: 2px solid <?php echo $has_config ? '#28a745' : '#dc3545'; ?>;">
+                    <div style="font-weight: 600; color: <?php echo $has_config ? '#28a745' : '#dc3545'; ?>;">
+                        <?php echo $has_config ? '✅ Sistema Listo' : '❌ Configuración Incompleta'; ?>
+                    </div>
+                    <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                        <?php echo $has_config ? 'Los reportes se pueden enviar' : 'Complete la configuración para enviar reportes'; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     <?php
 }
@@ -444,24 +686,291 @@ function dbst_mailjet_tab() {
  * Pestaña de reportes
  */
 function dbst_reports_tab($nonce) {
+    global $wpdb;
+    
     $daily_report_enabled = get_option('dbst_daily_report_enabled', 1);
+    $report_frequency = get_option('dbst_report_frequency', 'daily');
+    $report_recipients = get_option('dbst_report_recipients', get_option('admin_email'));
+    $include_summary = get_option('dbst_report_include_summary', 1);
+    $include_details = get_option('dbst_report_include_details', 1);
+    $report_time = get_option('dbst_report_time', '08:00');
+    
+    // Obtener estadísticas de hoy
+    $audit_table = dbst_get_audit_table_name();
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
+    
+    $stats_today = array('total' => 0, 'updates' => 0, 'deletes' => 0);
+    if ($table_exists) {
+        $stats_today['total'] = $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE DATE(event_time) = CURDATE()");
+        $stats_today['updates'] = $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE action = 'UPDATE' AND DATE(event_time) = CURDATE()");
+        $stats_today['deletes'] = $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE action = 'DELETE' AND DATE(event_time) = CURDATE()");
+    }
     
     ?>
-    <div class="dbst-card">
-        <h2>📈 Gestión de Reportes</h2>
-        <p>Configura y administra los reportes automáticos del sistema de auditoría.</p>
-        
-        <div style="background: #f0f8f0; padding: 15px; border-left: 4px solid #46b450; margin: 15px 0;">
-            <h4>📅 Reporte Diario Automático</h4>
-            <p><strong>Estado:</strong> <?php echo $daily_report_enabled ? '✅ Activado' : '❌ Desactivado'; ?></p>
-            <p>Los reportes se envían diariamente a las direcciones configuradas en Mailjet.</p>
-            
-            <a href="?page=db-safetrigger&tab=reports&action=toggle_daily_report&_wpnonce=<?php echo $nonce; ?>" 
-               class="button button-primary">
-                <?php echo $daily_report_enabled ? '⏸️ Desactivar' : '▶️ Activar'; ?> Reporte Diario
-            </a>
+    <div class="dbst-reports-container">
+        <style>
+        .dbst-reports-container {
+            max-width: 1200px;
+        }
+        .dbst-reports-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .dbst-report-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-left: 4px solid #2271b1;
+        }
+        .dbst-report-card h3 {
+            margin-top: 0;
+            color: #2271b1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .dbst-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .dbst-stat-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .dbst-stat-number {
+            display: block;
+            font-size: 24px;
+            font-weight: bold;
+            color: #2271b1;
+        }
+        .dbst-form-row {
+            margin-bottom: 15px;
+        }
+        .dbst-form-row label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .dbst-form-row input, .dbst-form-row select, .dbst-form-row textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        /* Estilos específicos para checkboxes - sobrescribir todo */
+        .dbst-form-row .dbst-checkbox-group {
+            background: none !important;
+            border: none !important;
+            padding: 4px 0 !important;
+            margin-bottom: 4px !important;
+        }
+        .dbst-checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 6px;
+            padding: 0;
+            border: none;
+            background: none;
+        }
+        .dbst-checkbox-group input[type="checkbox"] {
+            margin: 0 !important;
+            transform: scale(0.8);
+            width: auto !important;
+            padding: 0 !important;
+            border: 1px solid #ccc !important;
+            background: white !important;
+        }
+        .dbst-checkbox-group label {
+            margin: 0 !important;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 0 !important;
+            background: none !important;
+            border: none !important;
+            display: inline !important;
+            width: auto !important;
+        }
+        .dbst-button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .dbst-send-now {
+            background: #00a32a !important;
+            border-color: #00a32a !important;
+        }
+        .dbst-send-now:hover {
+            background: #008a20 !important;
+            border-color: #008a20 !important;
+        }
+        .dbst-preview-btn {
+            background: #0073aa !important;
+            border-color: #0073aa !important;
+        }
+        </style>
+
+        <h2>� Gestión de Reportes Avanzada</h2>
+        <p>Configura reportes automáticos personalizados y envía reportes instantáneos con los datos actuales.</p>
+
+        <div class="dbst-reports-grid">
+            <!-- Panel de Estadísticas Actuales -->
+            <div class="dbst-report-card">
+                <h3>📊 Estadísticas de Hoy</h3>
+                <div class="dbst-stats-grid">
+                    <div class="dbst-stat-item">
+                        <span class="dbst-stat-number"><?php echo number_format($stats_today['total']); ?></span>
+                        <small>Total Eventos</small>
+                    </div>
+                    <div class="dbst-stat-item">
+                        <span class="dbst-stat-number"><?php echo number_format($stats_today['updates']); ?></span>
+                        <small>Actualizaciones</small>
+                    </div>
+                    <div class="dbst-stat-item">
+                        <span class="dbst-stat-number"><?php echo number_format($stats_today['deletes']); ?></span>
+                        <small>Eliminaciones</small>
+                    </div>
+                </div>
+                
+                <div class="dbst-button-group">
+                    <a href="?page=db-safetrigger&tab=reports&action=send_instant_report&_wpnonce=<?php echo $nonce; ?>" 
+                       class="button button-primary dbst-send-now">
+                        📤 Enviar Reporte Ahora
+                    </a>
+                    <button type="button" id="preview-report" class="button dbst-preview-btn">
+                        👁️ Vista Previa
+                    </button>
+                </div>
+            </div>
+
+            <!-- Panel de Configuración -->
+            <div class="dbst-report-card">
+                <h3>⚙️ Configuración de Reportes</h3>
+                <form method="post" action="?page=db-safetrigger&tab=reports&action=save_report_config&_wpnonce=<?php echo $nonce; ?>">
+                    
+                    <div class="dbst-form-row">
+                        <div class="dbst-checkbox-group">
+                            <input type="checkbox" id="daily_enabled" name="daily_enabled" <?php checked($daily_report_enabled); ?>>
+                            <label for="daily_enabled">Activar reportes automáticos</label>
+                        </div>
+                    </div>
+
+                    <div class="dbst-form-row">
+                        <label for="report_frequency">Frecuencia:</label>
+                        <select name="report_frequency" id="report_frequency">
+                            <option value="daily" <?php selected($report_frequency, 'daily'); ?>>Diario</option>
+                            <option value="weekly" <?php selected($report_frequency, 'weekly'); ?>>Semanal</option>
+                            <option value="monthly" <?php selected($report_frequency, 'monthly'); ?>>Mensual</option>
+                        </select>
+                    </div>
+
+                    <div class="dbst-form-row">
+                        <label for="report_time">Hora de envío:</label>
+                        <input type="time" name="report_time" id="report_time" value="<?php echo esc_attr($report_time); ?>">
+                    </div>
+
+                    <div class="dbst-form-row">
+                        <label for="report_recipients">Destinatarios (separados por comas):</label>
+                        <textarea name="report_recipients" id="report_recipients" rows="3"><?php echo esc_textarea($report_recipients); ?></textarea>
+                    </div>
+
+                    <div class="dbst-form-row">
+                        <label>Contenido del reporte:</label>
+                        <div class="dbst-checkbox-group">
+                            <input type="checkbox" id="include_summary" name="include_summary" <?php checked($include_summary); ?>>
+                            <label for="include_summary">Incluir resumen estadístico</label>
+                        </div>
+                        <div class="dbst-checkbox-group">
+                            <input type="checkbox" id="include_details" name="include_details" <?php checked($include_details); ?>>
+                            <label for="include_details">Incluir detalles de eventos</label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="button button-primary">💾 Guardar Configuración</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Panel de Estado del Sistema -->
+        <div class="dbst-report-card">
+            <h3>🔍 Estado del Sistema de Reportes</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div style="background: #f0f8f0; padding: 15px; border-radius: 6px;">
+                    <strong>📅 Reportes Automáticos:</strong><br>
+                    <span style="color: <?php echo $daily_report_enabled ? '#46b450' : '#dc3232'; ?>;">
+                        <?php echo $daily_report_enabled ? '✅ Activados' : '❌ Desactivados'; ?>
+                    </span>
+                </div>
+                
+                <div style="background: #f0f8f0; padding: 15px; border-radius: 6px;">
+                    <strong>⏰ Próximo Envío:</strong><br>
+                    <?php 
+                    $next_scheduled = wp_next_scheduled('dbst_daily_audit_report');
+                    echo $next_scheduled ? date('Y-m-d H:i:s', $next_scheduled) : 'No programado';
+                    ?>
+                </div>
+                
+                <div style="background: #f0f8f0; padding: 15px; border-radius: 6px;">
+                    <strong>📧 Último Envío:</strong><br>
+                    <?php 
+                    $last_sent = get_option('dbst_last_report_sent', 'Nunca');
+                    echo $last_sent !== 'Nunca' ? date('Y-m-d H:i:s', strtotime($last_sent)) : $last_sent;
+                    ?>
+                </div>
+                
+                <div style="background: #f0f8f0; padding: 15px; border-radius: 6px;">
+                    <strong>📊 Total Destinatarios:</strong><br>
+                    <?php echo count(array_filter(array_map('trim', explode(',', $report_recipients)))); ?>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Modal de Vista Previa -->
+    <div id="report-preview-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 8px; max-width: 80%; max-height: 80%; overflow-y: auto;">
+            <h3>👁️ Vista Previa del Reporte</h3>
+            <div id="preview-content"></div>
+            <button type="button" onclick="document.getElementById('report-preview-modal').style.display='none'" class="button">Cerrar</button>
+        </div>
+    </div>
+
+    <script>
+    document.getElementById('preview-report').addEventListener('click', function() {
+        // Simulación de vista previa
+        const previewContent = `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                <h2>📊 Reporte de Auditoría - ${new Date().toLocaleDateString()}</h2>
+                <h3>📈 Resumen del Día</h3>
+                <ul>
+                    <li><strong>Total de eventos:</strong> <?php echo $stats_today['total']; ?></li>
+                    <li><strong>Actualizaciones:</strong> <?php echo $stats_today['updates']; ?></li>
+                    <li><strong>Eliminaciones:</strong> <?php echo $stats_today['deletes']; ?></li>
+                </ul>
+                <h3>🔍 Eventos Recientes</h3>
+                <p><em>Los eventos más recientes serían listados aquí con fecha y hora detallada...</em></p>
+                <hr>
+                <p><small>Generado automáticamente por DB-SafeTrigger</small></p>
+            </div>
+        `;
+        document.getElementById('preview-content').innerHTML = previewContent;
+        document.getElementById('report-preview-modal').style.display = 'block';
+    });
+
+    // Cerrar modal al hacer clic fuera
+    document.getElementById('report-preview-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.style.display = 'none';
+        }
+    });
+    </script>
     <?php
 }
 
@@ -472,12 +981,13 @@ function dbst_logs_tab() {
     global $wpdb;
     
     // Verificar si la tabla existe
-    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'log_auditoria'") === 'log_auditoria';
+    $audit_table = dbst_get_audit_table_name();
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
     
     if (!$table_exists) {
         echo '<div class="dbst-card">';
         echo '<h2>❌ Tabla de Auditoría No Encontrada</h2>';
-        echo '<p>La tabla log_auditoria no existe. Por favor, activa el plugin o crea la tabla manualmente.</p>';
+        echo "<p>La tabla $audit_table no existe. Por favor, activa el plugin o crea la tabla manualmente.</p>";
         echo '</div>';
         return;
     }
@@ -514,13 +1024,13 @@ function dbst_logs_tab() {
     $where_clause = !empty($where_conditions) ? implode(' AND ', $where_conditions) : '1=1';
     
     // Contar total de registros
-    $count_query = "SELECT COUNT(*) FROM log_auditoria l WHERE $where_clause";
+    $count_query = "SELECT COUNT(*) FROM `$audit_table` l WHERE $where_clause";
     $total_logs = $wpdb->get_var(!empty($where_params) ? $wpdb->prepare($count_query, $where_params) : $count_query);
     
     // Obtener logs
     $query = "
         SELECT l.*, u.display_name, u.user_login
-        FROM log_auditoria l
+        FROM `$audit_table` l
         LEFT JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
         WHERE $where_clause
         ORDER BY l.id DESC 
@@ -533,7 +1043,7 @@ function dbst_logs_tab() {
     // Obtener usuarios para filtro
     $users_with_logs = $wpdb->get_results("
         SELECT DISTINCT u.ID, u.user_login, u.display_name
-        FROM log_auditoria l
+        FROM `$audit_table` l
         INNER JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
         ORDER BY u.display_name
     ");
@@ -604,51 +1114,188 @@ function dbst_logs_tab() {
                     📭 No se encontraron logs con los filtros aplicados.
                 </div>
             <?php else: ?>
-                <table class="wp-list-table widefat fixed striped" style="border: none;">
+                <style>
+                .dbst-log-table {
+                    border: none;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                }
+                .dbst-log-table th {
+                    background: #f8f9fa;
+                    border-bottom: 2px solid #dee2e6;
+                    font-weight: 600;
+                    color: #495057;
+                }
+                .dbst-log-table td {
+                    vertical-align: top;
+                    padding: 12px 8px;
+                    border-bottom: 1px solid #f1f3f4;
+                }
+                .dbst-log-table tr:hover {
+                    background: #f8f9fa;
+                }
+                .dbst-datetime {
+                    font-family: 'Courier New', monospace;
+                    font-size: 12px;
+                    background: #f8f9fa;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    border-left: 3px solid #2271b1;
+                }
+                .dbst-user-info {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .dbst-user-avatar {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 50%;
+                    background: #2271b1;
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 10px;
+                    font-weight: bold;
+                }
+                .dbst-action-badge {
+                    padding: 4px 8px;
+                    border-radius: 12px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                }
+                .dbst-action-update {
+                    background: #e7f3ff;
+                    color: #0066cc;
+                    border: 1px solid #b3d9ff;
+                }
+                .dbst-action-delete {
+                    background: #ffe7e7;
+                    color: #cc0000;
+                    border: 1px solid #ffb3b3;
+                }
+                .dbst-table-name {
+                    font-family: 'Courier New', monospace;
+                    background: #f1f3f4;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-size: 11px;
+                    font-weight: 600;
+                }
+                </style>
+                
+                <table class="wp-list-table widefat fixed striped dbst-log-table">
                     <thead>
                         <tr>
-                            <th style="width: 140px;">Fecha y Hora</th>
-                            <th style="width: 150px;">Usuario WordPress</th>
-                            <th style="width: 100px;">Tabla</th>
-                            <th style="width: 80px;">Acción</th>
-                            <th style="width: 80px;">ID Registro</th>
-                            <th>Usuario MySQL</th>
+                            <th style="width: 160px;">📅 Fecha y Hora</th>
+                            <th style="width: 180px;">👤 Usuario WordPress</th>
+                            <th style="width: 120px;">📋 Tabla</th>
+                            <th style="width: 100px;">⚡ Acción</th>
+                            <th style="width: 80px;">🔑 ID</th>
+                            <th>🔧 Usuario BD</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($logs as $log): ?>
+                        <?php foreach ($logs as $log): 
+                            $event_date = new DateTime($log->event_time);
+                            $now = new DateTime();
+                            $diff = $now->diff($event_date);
+                            
+                            // Determinar si es hoy, ayer, etc.
+                            $date_label = '';
+                            if ($diff->days == 0) {
+                                $date_label = '🟢 Hoy';
+                            } elseif ($diff->days == 1) {
+                                $date_label = '🟡 Ayer';
+                            } elseif ($diff->days <= 7) {
+                                $date_label = '🔵 ' . $diff->days . ' días';
+                            } else {
+                                $date_label = '⚪ ' . $event_date->format('d/m/Y');
+                            }
+                        ?>
                             <tr>
-                                <td style="font-family: monospace; font-size: 11px;">
-                                    <?php echo date('Y-m-d H:i:s', strtotime($log->event_time)); ?>
+                                <td>
+                                    <div class="dbst-datetime">
+                                        <div style="font-weight: 600; color: #2271b1; margin-bottom: 2px;">
+                                            <?php echo $event_date->format('H:i:s'); ?>
+                                        </div>
+                                        <div style="font-size: 10px; color: #666;">
+                                            <?php echo $date_label; ?> • <?php echo $event_date->format('d/m/Y'); ?>
+                                        </div>
+                                    </div>
                                 </td>
                                 <td>
                                     <?php if ($log->wp_user_id && $log->display_name): ?>
-                                        <strong style="color: #2271b1;">
-                                            👤 <?php echo esc_html($log->display_name); ?>
-                                        </strong>
-                                        <br><small style="color: #666;">(@<?php echo esc_html($log->user_login); ?>)</small>
+                                        <div class="dbst-user-info">
+                                            <div class="dbst-user-avatar">
+                                                <?php echo strtoupper(substr($log->display_name, 0, 1)); ?>
+                                            </div>
+                                            <div>
+                                                <div style="font-weight: 600; color: #2271b1;">
+                                                    <?php echo esc_html($log->display_name); ?>
+                                                </div>
+                                                <div style="font-size: 11px; color: #666;">
+                                                    @<?php echo esc_html($log->user_login); ?>
+                                                </div>
+                                            </div>
+                                        </div>
                                     <?php else: ?>
-                                        <span style="color: #d63384;">❌ Sistema/No identificado</span>
+                                        <div class="dbst-user-info">
+                                            <div class="dbst-user-avatar" style="background: #dc3545;">
+                                                ⚠️
+                                            </div>
+                                            <div>
+                                                <div style="color: #dc3545; font-weight: 600;">
+                                                    Sistema
+                                                </div>
+                                                <div style="font-size: 11px; color: #666;">
+                                                    No identificado
+                                                </div>
+                                            </div>
+                                        </div>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <code style="background: #f1f1f1; padding: 2px 4px; border-radius: 3px;">
+                                    <div class="dbst-table-name">
                                         <?php 
                                         $table_parts = explode('_', $log->table_name);
-                                        echo esc_html(end($table_parts)); 
+                                        $table_icon = '';
+                                        $table_short = end($table_parts);
+                                        
+                                        switch($table_short) {
+                                            case 'posts': $table_icon = '📝'; break;
+                                            case 'users': $table_icon = '👥'; break;
+                                            case 'comments': $table_icon = '💬'; break;
+                                            default: $table_icon = '📋'; break;
+                                        }
+                                        
+                                        echo $table_icon . ' ' . esc_html($table_short); 
                                         ?>
-                                    </code>
+                                    </div>
                                 </td>
                                 <td>
-                                    <span class="dashicons dashicons-<?php echo $log->action === 'UPDATE' ? 'edit' : 'trash'; ?>" 
-                                          style="color: <?php echo $log->action === 'UPDATE' ? '#2196f3' : '#f44336'; ?>;"></span>
-                                    <strong><?php echo $log->action; ?></strong>
+                                    <?php if ($log->action === 'UPDATE'): ?>
+                                        <div class="dbst-action-badge dbst-action-update">
+                                            ✏️ UPDATE
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="dbst-action-badge dbst-action-delete">
+                                            🗑️ DELETE
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
-                                <td style="font-family: monospace;">
-                                    <strong><?php echo esc_html($log->pk_value); ?></strong>
+                                <td style="font-family: 'Courier New', monospace; text-align: center;">
+                                    <div style="background: #f8f9fa; padding: 4px 8px; border-radius: 4px; font-weight: 600; color: #495057;">
+                                        #<?php echo esc_html($log->pk_value); ?>
+                                    </div>
                                 </td>
-                                <td style="font-family: monospace; font-size: 11px; color: #666;">
-                                    <?php echo esc_html($log->db_user ?: 'N/A'); ?>
+                                <td>
+                                    <div style="font-family: 'Courier New', monospace; font-size: 11px; background: #f1f3f4; padding: 4px 6px; border-radius: 3px; color: #495057;">
+                                        <?php echo esc_html($log->db_user ?: 'N/A'); ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -699,14 +1346,15 @@ function dbst_send_audit_report($is_test = false) {
     }
     
     // Obtener estadísticas
-    $total_logs = $wpdb->get_var("SELECT COUNT(*) FROM log_auditoria");
-    $logs_today = $wpdb->get_var("SELECT COUNT(*) FROM log_auditoria WHERE DATE(event_time) = CURDATE()");
-    $logs_week = $wpdb->get_var("SELECT COUNT(*) FROM log_auditoria WHERE event_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+    $audit_table = dbst_get_audit_table_name();
+    $total_logs = $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table`");
+    $logs_today = $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE DATE(event_time) = CURDATE()");
+    $logs_week = $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE event_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
     
     // Obtener logs recientes
     $recent_logs = $wpdb->get_results("
         SELECT event_time, table_name, action, pk_value 
-        FROM log_auditoria 
+        FROM `$audit_table` 
         ORDER BY id DESC 
         LIMIT 10
     ");
@@ -926,21 +1574,21 @@ function dbst_create_triggers_definitivo() {
     
     // Detectar prefijo de base de datos
     $prefix = $wpdb->prefix;
+    $audit_table = dbst_get_audit_table_name();
     
-    $results = array();
-    $results[] = "🔍 <strong>INICIANDO CREACIÓN DE TRIGGERS v1.1.0</strong>";
-    $results[] = "📋 Prefijo detectado: <code>$prefix</code>";
+
+    $results[] = "�️ <strong>Configurando Sistema de Auditoría</strong>";
+
     
-    // Verificar que la tabla log_auditoria existe
-    $audit_table_exists = $wpdb->get_var("SHOW TABLES LIKE 'log_auditoria'") === 'log_auditoria';
+    // Verificar que la tabla de auditoría existe
+    $audit_table = dbst_get_audit_table_name();
+    $audit_table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
     if (!$audit_table_exists) {
-        $results[] = "❌ ERROR: Tabla 'log_auditoria' no existe";
-        return array('type' => 'error', 'message' => implode('<br>', $results));
+        return array('type' => 'error', 'message' => '❌ Error: No se pudo encontrar la tabla de auditoría. Por favor, reactiva el plugin.');
     }
-    $results[] = "✅ Tabla 'log_auditoria' confirmada";
     
     // Verificar campo wp_user_id en tabla de auditoría
-    $columns = $wpdb->get_results("DESCRIBE log_auditoria");
+    $columns = $wpdb->get_results("DESCRIBE `$audit_table`");
     $has_wp_user_id = false;
     foreach ($columns as $column) {
         if ($column->Field === 'wp_user_id') {
@@ -950,24 +1598,23 @@ function dbst_create_triggers_definitivo() {
     }
     
     if (!$has_wp_user_id) {
-        $results[] = "⚠️ Campo wp_user_id no existe - agregando automáticamente...";
-        $add_column = $wpdb->query("ALTER TABLE log_auditoria ADD COLUMN wp_user_id BIGINT UNSIGNED NULL AFTER db_user");
+
+        $add_column = $wpdb->query("ALTER TABLE `$audit_table` ADD COLUMN wp_user_id BIGINT UNSIGNED NULL AFTER db_user");
         
         if ($add_column !== false) {
-            $results[] = "✅ Campo wp_user_id agregado correctamente";
-            $wpdb->query("ALTER TABLE log_auditoria ADD INDEX idx_wp_user_time (wp_user_id, event_time)");
+
+            $wpdb->query("ALTER TABLE `$audit_table` ADD INDEX idx_wp_user_time (wp_user_id, event_time)");
         } else {
-            $results[] = "❌ Error agregando campo: " . $wpdb->last_error;
-            return array('type' => 'error', 'message' => implode('<br>', $results));
+            return array('type' => 'error', 'message' => '❌ Error al optimizar la estructura de la base de datos.');
         }
     } else {
-        $results[] = "✅ Campo wp_user_id confirmado en tabla de auditoría";
+
     }
     
     // Configurar captura de usuario si la clase existe
     if (class_exists('DBST_Session')) {
         DBST_Session::force_set_user();
-        $results[] = "✅ Sistema de captura de usuario activado";
+
     }
     
     // Definir tablas a monitorear
@@ -986,11 +1633,11 @@ function dbst_create_triggers_definitivo() {
         // Verificar que la tabla existe
         $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $full_table_name)) === $full_table_name;
         if (!$table_exists) {
-            $results[] = "⚠️ Tabla $full_table_name no existe - saltando";
+
             continue;
         }
         
-        $results[] = "🔧 <strong>Procesando tabla: $full_table_name</strong>";
+        $results[] = "� <strong>Configurando monitoreo para: $table_suffix</strong>";
         
         // === CREAR TRIGGER UPDATE ===
         $trigger_name_update = "trg_{$table_suffix}_au"; // After Update
@@ -1013,7 +1660,7 @@ function dbst_create_triggers_definitivo() {
                 SET wp_user_captured = @wp_current_user_id;
             END IF;
             
-            INSERT INTO log_auditoria (
+            INSERT INTO `$audit_table` (
                 event_time, 
                 db_user, 
                 wp_user_id, 
@@ -1036,10 +1683,10 @@ function dbst_create_triggers_definitivo() {
         
         $result_update = $wpdb->query($trigger_sql_update);
         if ($result_update !== false) {
-            $results[] = "✅ Trigger UPDATE creado: $trigger_name_update";
+
             $created_count++;
         } else {
-            $results[] = "❌ Error creando trigger UPDATE: " . ($wpdb->last_error ?: 'Error SQL desconocido');
+
             $error_count++;
         }
         
@@ -1064,7 +1711,7 @@ function dbst_create_triggers_definitivo() {
                 SET wp_user_captured = @wp_current_user_id;
             END IF;
             
-            INSERT INTO log_auditoria (
+            INSERT INTO `$audit_table` (
                 event_time, 
                 db_user, 
                 wp_user_id, 
@@ -1087,35 +1734,412 @@ function dbst_create_triggers_definitivo() {
         
         $result_delete = $wpdb->query($trigger_sql_delete);
         if ($result_delete !== false) {
-            $results[] = "✅ Trigger DELETE creado: $trigger_name_delete";
+
             $created_count++;
         } else {
-            $results[] = "❌ Error creando trigger DELETE: " . ($wpdb->last_error ?: 'Error SQL desconocido');
+
             $error_count++;
         }
     }
     
-    $results[] = "📊 <strong>RESUMEN FINAL:</strong>";
-    $results[] = "✅ Triggers creados exitosamente: <strong>$created_count</strong>";
-    if ($error_count > 0) {
-        $results[] = "❌ Errores encontrados: <strong>$error_count</strong>";
-    }
+
+
+
     
     // Verificar triggers creados
     $active_triggers = $wpdb->get_results("SHOW TRIGGERS");
     $db_triggers = array_filter($active_triggers, function($t) { return strpos($t->Trigger, 'trg_') === 0; });
-    $results[] = "🔍 Triggers activos en base de datos: <strong>" . count($db_triggers) . "</strong>";
+    $results[] = "� Sistemas de monitoreo activos: <strong>" . count($db_triggers) . "</strong>";
     
-    if (count($db_triggers) > 0) {
-        $results[] = "📋 <strong>Lista de triggers activos:</strong>";
-        foreach ($db_triggers as $trigger) {
-            $results[] = "• $trigger->Trigger → $trigger->Table ($trigger->Event)";
+
+    
+    $message = '✅ Sistema de auditoría configurado exitosamente. El monitoreo está activo.';
+    $type = 'success';
+    
+    if ($error_count > 0) {
+        $message = '❌ Se produjeron algunos errores durante la configuración. Por favor, inténtalo nuevamente.';
+        $type = 'error';
+    }
+    
+    if ($created_count === 0) {
+        $message = '❌ No se pudieron crear los triggers. Verifica los permisos de la base de datos.';
+        $type = 'error';
+    }
+    
+    return array('type' => $type, 'message' => $message);
+}
+
+/**
+ * Función para migrar datos de la tabla antigua log_auditoria a la nueva con prefijo
+ */
+function dbst_migrate_old_table() {
+    global $wpdb;
+    
+    $old_table = 'log_auditoria';
+    $new_table = dbst_get_audit_table_name();
+    
+    // Verificar si la tabla antigua existe
+    $old_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$old_table'") === $old_table;
+    if (!$old_table_exists) {
+        return; // No hay nada que migrar
+    }
+    
+    // Verificar si la tabla nueva existe
+    $new_table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $new_table)) === $new_table;
+    if (!$new_table_exists) {
+        return; // La tabla nueva no existe, no se puede migrar
+    }
+    
+    // Verificar si ya se migró (evitar duplicaciones)
+    $migration_done = get_option('dbst_migration_completed', false);
+    if ($migration_done) {
+        return;
+    }
+    
+    // Contar registros en tabla antigua
+    $old_count = $wpdb->get_var("SELECT COUNT(*) FROM `$old_table`");
+    if ($old_count == 0) {
+        // No hay datos que migrar, marcar como completado
+        update_option('dbst_migration_completed', true);
+        return;
+    }
+    
+    // Migrar datos
+    $migration_query = "
+        INSERT INTO `$new_table` (
+            id, event_time, db_user, wp_user_id, table_name, 
+            action, pk_value, old_data, client_host
+        )
+        SELECT 
+            id, event_time, db_user, wp_user_id, table_name, 
+            action, pk_value, old_data, client_host
+        FROM `$old_table`
+        WHERE NOT EXISTS (
+            SELECT 1 FROM `$new_table` 
+            WHERE `$new_table`.id = `$old_table`.id
+        )
+    ";
+    
+    $result = $wpdb->query($migration_query);
+    
+    if ($result !== false) {
+        // Migración exitosa
+        update_option('dbst_migration_completed', true);
+        update_option('dbst_migration_records', $old_count);
+        update_option('dbst_migration_date', current_time('mysql'));
+        
+        // Opcional: eliminar tabla antigua después de la migración
+        // $wpdb->query("DROP TABLE IF EXISTS `$old_table`");
+        // add_option('dbst_old_table_dropped', true);
+    } else {
+        // Error en la migración
+        update_option('dbst_migration_error', $wpdb->last_error);
+    }
+}
+
+/**
+ * Eliminar todas las opciones del plugin y devolver conteo
+ */
+function dbst_remove_all_plugin_options() {
+    $options = array(
+        // Opciones principales
+        'dbst_json_support', 'dbst_last_sql_error', 'db_safetrigger_version',
+        'dbst_daily_report_enabled', 'dbst_admin_email', 'db_safetrigger_enabled',
+        'db_safetrigger_monitor_tables', 'dbst_create_triggers_needed', 'dbst_monitor_tables',
+        
+        // Opciones de Mailjet
+        'dbst_mailjet_api_key', 'dbst_mailjet_secret_key', 'dbst_mailjet_from_email',
+        'dbst_mailjet_from_name', 'dbst_mailjet_sandbox_mode', 'dbst_report_recipients',
+        'dbst_last_mailjet_error', 'dbst_last_message_id', 'dbst_last_message_uuid',
+        'dbst_last_report_sent', 'dbst_last_report_success', 'dbst_last_email_method',
+        
+        // Opciones de migración
+        'dbst_migration_completed', 'dbst_migration_records', 'dbst_migration_date',
+        'dbst_migration_error', 'dbst_old_table_dropped',
+        
+        // Opciones de actualización
+        'dbst_upgrade_1_1_0_completed', 'dbst_triggers_need_update'
+    );
+    
+    $deleted_count = 0;
+    foreach ($options as $option) {
+        if (delete_option($option)) {
+            $deleted_count++;
         }
     }
     
-    $message = implode('<br>', $results);
-    $type = ($error_count === 0 && $created_count > 0) ? 'success' : 'error';
+    return $deleted_count;
+}
+
+/**
+ * Enviar reporte de auditoría instantáneo
+ */
+function dbst_send_instant_audit_report() {
+    global $wpdb;
     
-    return array('type' => $type, 'message' => $message);
+    try {
+        $audit_table = dbst_get_audit_table_name();
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $audit_table)) === $audit_table;
+        
+        if (!$table_exists) {
+            return array(
+                'success' => false,
+                'message' => '❌ No se puede enviar el reporte: la tabla de auditoría no existe.'
+            );
+        }
+        
+        // Obtener estadísticas de hoy
+        $today = date('Y-m-d');
+        $stats = array(
+            'total' => $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE DATE(event_time) = '$today'"),
+            'updates' => $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE action = 'UPDATE' AND DATE(event_time) = '$today'"),
+            'deletes' => $wpdb->get_var("SELECT COUNT(*) FROM `$audit_table` WHERE action = 'DELETE' AND DATE(event_time) = '$today'"),
+            'tables' => $wpdb->get_results("SELECT table_name, COUNT(*) as count FROM `$audit_table` WHERE DATE(event_time) = '$today' GROUP BY table_name ORDER BY count DESC")
+        );
+        
+        // Obtener eventos recientes (últimos 20)
+        $recent_events = $wpdb->get_results("
+            SELECT l.*, u.display_name, u.user_login
+            FROM `$audit_table` l
+            LEFT JOIN {$wpdb->users} u ON l.wp_user_id = u.ID
+            WHERE DATE(l.event_time) = '$today'
+            ORDER BY l.id DESC 
+            LIMIT 20
+        ");
+        
+        // Generar contenido del reporte
+        $report_content = dbst_generate_report_content($stats, $recent_events, 'instant');
+        
+        // Obtener destinatarios
+        $recipients = get_option('dbst_report_recipients', get_option('admin_email'));
+        $recipient_list = array_filter(array_map('trim', explode(',', $recipients)));
+        
+        if (empty($recipient_list)) {
+            return array(
+                'success' => false,
+                'message' => '❌ No hay destinatarios configurados para el reporte.'
+            );
+        }
+        
+        // Enviar reporte
+        $mailjet_result = dbst_send_mailjet_report($recipient_list, $report_content, 'instant');
+        
+        if ($mailjet_result['success']) {
+            update_option('dbst_last_report_sent', current_time('mysql'));
+            return array(
+                'success' => true,
+                'message' => "✅ Reporte enviado exitosamente a " . count($recipient_list) . " destinatario(s)."
+            );
+        } else {
+            return array(
+                'success' => false,
+                'message' => '❌ Error enviando reporte: ' . $mailjet_result['message']
+            );
+        }
+        
+    } catch (Exception $e) {
+        return array(
+            'success' => false,
+            'message' => '❌ Error generando reporte: ' . $e->getMessage()
+        );
+    }
+}
+
+/**
+ * Generar contenido HTML del reporte
+ */
+function dbst_generate_report_content($stats, $recent_events, $type = 'daily') {
+    $site_name = get_bloginfo('name');
+    $site_url = get_site_url();
+    $date = date('Y-m-d H:i:s');
+    $report_title = $type === 'instant' ? 'Reporte Instantáneo' : 'Reporte Diario';
+    
+    $content = "
+    <div style='font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; background: #f9f9f9; padding: 20px;'>
+        <div style='background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);'>
+            <header style='text-align: center; margin-bottom: 30px; border-bottom: 2px solid #2271b1; padding-bottom: 20px;'>
+                <h1 style='color: #2271b1; margin: 0;'>🛡️ DB-SafeTrigger</h1>
+                <h2 style='color: #666; margin: 10px 0 0 0;'>📊 $report_title de Auditoría</h2>
+                <p style='color: #888; margin: 5px 0 0 0;'>$site_name • $date</p>
+            </header>
+            
+            <section style='margin-bottom: 30px;'>
+                <h3 style='color: #2271b1; border-left: 4px solid #2271b1; padding-left: 15px;'>📈 Resumen de Actividad - " . date('d/m/Y') . "</h3>
+                <div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0;'>
+                    <div style='background: #e7f3ff; padding: 20px; border-radius: 6px; text-align: center; border: 1px solid #b3d9ff;'>
+                        <div style='font-size: 32px; font-weight: bold; color: #0073aa;'>" . number_format($stats['total']) . "</div>
+                        <div style='color: #666; font-weight: 600;'>Total Eventos</div>
+                    </div>
+                    <div style='background: #e6f7ff; padding: 20px; border-radius: 6px; text-align: center; border: 1px solid #91d5ff;'>
+                        <div style='font-size: 32px; font-weight: bold; color: #1890ff;'>" . number_format($stats['updates']) . "</div>
+                        <div style='color: #666; font-weight: 600;'>Actualizaciones</div>
+                    </div>
+                    <div style='background: #fff2e6; padding: 20px; border-radius: 6px; text-align: center; border: 1px solid #ffcc99;'>
+                        <div style='font-size: 32px; font-weight: bold; color: #fa8c16;'>" . number_format($stats['deletes']) . "</div>
+                        <div style='color: #666; font-weight: 600;'>Eliminaciones</div>
+                    </div>
+                </div>
+            </section>";
+    
+    // Actividad por tabla
+    if (!empty($stats['tables'])) {
+        $content .= "
+            <section style='margin-bottom: 30px;'>
+                <h3 style='color: #2271b1; border-left: 4px solid #2271b1; padding-left: 15px;'>📋 Actividad por Tabla</h3>
+                <table style='width: 100%; border-collapse: collapse; margin: 15px 0;'>
+                    <thead>
+                        <tr style='background: #f8f9fa;'>
+                            <th style='padding: 12px; text-align: left; border: 1px solid #dee2e6; font-weight: 600;'>Tabla</th>
+                            <th style='padding: 12px; text-align: center; border: 1px solid #dee2e6; font-weight: 600;'>Eventos</th>
+                        </tr>
+                    </thead>
+                    <tbody>";
+        
+        foreach ($stats['tables'] as $table_stat) {
+            $content .= "
+                        <tr>
+                            <td style='padding: 10px 12px; border: 1px solid #dee2e6;'><code style='background: #f8f9fa; padding: 2px 6px; border-radius: 3px;'>" . esc_html($table_stat->table_name) . "</code></td>
+                            <td style='padding: 10px 12px; border: 1px solid #dee2e6; text-align: center; font-weight: 600; color: #2271b1;'>" . number_format($table_stat->count) . "</td>
+                        </tr>";
+        }
+        
+        $content .= "
+                    </tbody>
+                </table>
+            </section>";
+    }
+    
+    // Eventos recientes
+    if (!empty($recent_events) && get_option('dbst_report_include_details', 1)) {
+        $content .= "
+            <section style='margin-bottom: 30px;'>
+                <h3 style='color: #2271b1; border-left: 4px solid #2271b1; padding-left: 15px;'>🔍 Eventos Recientes</h3>
+                <div style='max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 6px;'>
+                    <table style='width: 100%; border-collapse: collapse;'>
+                        <thead style='position: sticky; top: 0; background: #f8f9fa;'>
+                            <tr>
+                                <th style='padding: 12px 8px; text-align: left; border-bottom: 2px solid #dee2e6; font-size: 13px;'>Hora</th>
+                                <th style='padding: 12px 8px; text-align: left; border-bottom: 2px solid #dee2e6; font-size: 13px;'>Usuario</th>
+                                <th style='padding: 12px 8px; text-align: left; border-bottom: 2px solid #dee2e6; font-size: 13px;'>Tabla</th>
+                                <th style='padding: 12px 8px; text-align: left; border-bottom: 2px solid #dee2e6; font-size: 13px;'>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>";
+        
+        foreach ($recent_events as $event) {
+            $event_time = date('H:i:s', strtotime($event->event_time));
+            $user_display = $event->display_name ?: $event->user_login ?: 'Sistema';
+            $action_color = $event->action === 'DELETE' ? '#dc3545' : '#28a745';
+            $action_icon = $event->action === 'DELETE' ? '🗑️' : '✏️';
+            
+            $content .= "
+                            <tr style='border-bottom: 1px solid #f1f1f1;'>
+                                <td style='padding: 8px; font-family: monospace; font-size: 13px; color: #666;'>$event_time</td>
+                                <td style='padding: 8px; font-size: 13px;'>$user_display</td>
+                                <td style='padding: 8px; font-size: 13px;'><code style='background: #f8f9fa; padding: 2px 6px; border-radius: 3px; font-size: 12px;'>" . esc_html($event->table_name) . "</code></td>
+                                <td style='padding: 8px; font-size: 13px;'><span style='color: $action_color; font-weight: 600;'>$action_icon " . esc_html($event->action) . "</span></td>
+                            </tr>";
+        }
+        
+        $content .= "
+                        </tbody>
+                    </table>
+                </div>
+            </section>";
+    }
+    
+    $content .= "
+            <footer style='margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #888;'>
+                <p style='margin: 0; font-size: 14px;'>
+                    🛡️ Generado automáticamente por <strong>DB-SafeTrigger</strong><br>
+                    <a href='$site_url' style='color: #2271b1; text-decoration: none;'>$site_name</a>
+                </p>
+            </footer>
+        </div>
+    </div>";
+    
+    return $content;
+}
+
+/**
+ * Enviar reporte via Mailjet
+ */
+function dbst_send_mailjet_report($recipients, $content, $type = 'daily') {
+    $api_key = get_option('dbst_mailjet_api_key');
+    $secret_key = get_option('dbst_mailjet_secret_key');
+    $from_email = get_option('dbst_mailjet_from_email');
+    $from_name = get_option('dbst_mailjet_from_name', 'DB-SafeTrigger');
+    
+    if (empty($api_key) || empty($secret_key) || empty($from_email)) {
+        return array(
+            'success' => false,
+            'message' => 'Configuración de Mailjet incompleta'
+        );
+    }
+    
+    $subject = $type === 'instant' ? 
+        '📊 Reporte Instantáneo de Auditoría - ' . get_bloginfo('name') : 
+        '📅 Reporte Diario de Auditoría - ' . get_bloginfo('name');
+    
+    $mailjet_data = array(
+        'Messages' => array(
+            array(
+                'From' => array(
+                    'Email' => $from_email,
+                    'Name' => $from_name
+                ),
+                'To' => array(),
+                'Subject' => $subject,
+                'HTMLPart' => $content
+            )
+        )
+    );
+    
+    // Añadir destinatarios
+    foreach ($recipients as $email) {
+        if (is_email($email)) {
+            $mailjet_data['Messages'][0]['To'][] = array('Email' => $email);
+        }
+    }
+    
+    if (empty($mailjet_data['Messages'][0]['To'])) {
+        return array(
+            'success' => false,
+            'message' => 'No hay destinatarios válidos'
+        );
+    }
+    
+    // Enviar via Mailjet
+    $response = wp_remote_post('https://api.mailjet.com/v3.1/send', array(
+        'timeout' => 30,
+        'headers' => array(
+            'Authorization' => 'Basic ' . base64_encode($api_key . ':' . $secret_key),
+            'Content-Type' => 'application/json'
+        ),
+        'body' => json_encode($mailjet_data)
+    ));
+    
+    if (is_wp_error($response)) {
+        return array(
+            'success' => false,
+            'message' => $response->get_error_message()
+        );
+    }
+    
+    $response_code = wp_remote_retrieve_response_code($response);
+    $response_body = json_decode(wp_remote_retrieve_body($response), true);
+    
+    if ($response_code === 200 && isset($response_body['Messages'][0]['Status']) && $response_body['Messages'][0]['Status'] === 'success') {
+        return array(
+            'success' => true,
+            'message' => 'Reporte enviado exitosamente'
+        );
+    } else {
+        $error_message = isset($response_body['ErrorMessage']) ? $response_body['ErrorMessage'] : 'Error desconocido';
+        return array(
+            'success' => false,
+            'message' => $error_message
+        );
+    }
 }
 ?>
