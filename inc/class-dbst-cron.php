@@ -63,6 +63,7 @@ class DBST_Cron {
      */
     private function generate_daily_report() {
         global $wpdb;
+        $audit_table = $wpdb->prefix . 'BD_SafeTrigger';
         
         $today = current_time('Y-m-d');
         
@@ -74,7 +75,7 @@ class DBST_Cron {
                 COUNT(*) as total_events,
                 MIN(event_time) as first_event,
                 MAX(event_time) as last_event
-            FROM log_auditoria 
+            FROM `{$audit_table}` 
             WHERE DATE(event_time) = %s
             GROUP BY table_name, action
             ORDER BY total_events DESC, table_name, action
@@ -87,13 +88,13 @@ class DBST_Cron {
         // Obtener estadísticas adicionales
         $total_events = $wpdb->get_var($wpdb->prepare("
             SELECT COUNT(*) 
-            FROM log_auditoria 
+            FROM `{$audit_table}` 
             WHERE DATE(event_time) = %s
         ", $today));
         
         $unique_tables = $wpdb->get_var($wpdb->prepare("
             SELECT COUNT(DISTINCT table_name) 
-            FROM log_auditoria 
+            FROM `{$audit_table}` 
             WHERE DATE(event_time) = %s
         ", $today));
         

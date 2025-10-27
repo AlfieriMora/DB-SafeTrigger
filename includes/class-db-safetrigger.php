@@ -62,7 +62,8 @@ class DB_SafeTrigger {
      */
     private function set_locale() {
         $plugin_i18n = new DB_SafeTrigger_i18n();
-        $this->loader->add_action('plugins_loaded', $plugin_i18n, 'load_plugin_textdomain');
+        $this->loader->add_action('init', $plugin_i18n, 'load_plugin_textdomain', 1);
+        $this->loader->add_action('admin_init', $plugin_i18n, 'load_plugin_textdomain', 1);
     }
     
     /**

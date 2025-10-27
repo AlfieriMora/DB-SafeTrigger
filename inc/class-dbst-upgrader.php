@@ -35,32 +35,32 @@ class DBST_Upgrader {
     private static function upgrade_to_1_1_0() {
         global $wpdb;
         
-        $table_name = 'log_auditoria';
+        $table_name = $wpdb->prefix . 'BD_SafeTrigger';
         
         // Verificar si la tabla existe
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name)) !== $table_name) {
             return false;
         }
         
         // Verificar si el campo wp_user_id ya existe
-        $column_exists = $wpdb->get_var("
+        $column_exists = $wpdb->get_var($wpdb->prepare("
             SELECT COUNT(*) 
             FROM information_schema.COLUMNS 
-            WHERE TABLE_NAME = '$table_name' 
+            WHERE TABLE_NAME = %s 
             AND COLUMN_NAME = 'wp_user_id'
-        ");
+        ", $table_name));
         
         if (!$column_exists) {
             // Agregar campo wp_user_id
             $wpdb->query("
-                ALTER TABLE $table_name 
+                ALTER TABLE `$table_name` 
                 ADD COLUMN wp_user_id BIGINT UNSIGNED NULL 
                 AFTER db_user
             ");
             
             // Agregar referencia a wp_users (sin FK por compatibilidad)
             $wpdb->query("
-                ALTER TABLE $table_name 
+                ALTER TABLE `$table_name` 
                 ADD INDEX idx_wp_user_time (wp_user_id, event_time)
             ");
             
@@ -99,7 +99,7 @@ class DBST_Upgrader {
                 'title' => 'Mejora de Trazabilidad de Usuarios',
                 'description' => 'Agrega seguimiento del usuario de WordPress que realiza cambios',
                 'changes' => array(
-                    'Nuevo campo wp_user_id en tabla log_auditoria',
+                    'Nuevo campo wp_user_id en tabla BD_SafeTrigger',
                     'Triggers actualizados para capturar usuario WordPress',
                     'Interfaz mejorada con nombres de usuario',
                     'Filtros por usuario en logs'

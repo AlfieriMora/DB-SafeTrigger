@@ -53,6 +53,7 @@ class DBST_Installer {
      */
     private function create_trigger($table_name, $action) {
         global $wpdb;
+        $audit_table = $wpdb->prefix . 'BD_SafeTrigger';
         
         $prefixed_table = $wpdb->prefix . $table_name;
         $trigger_name = $this->get_trigger_name($table_name, $action);
@@ -70,7 +71,7 @@ class DBST_Installer {
         BEFORE $action ON `$prefixed_table`
         FOR EACH ROW
         BEGIN
-            INSERT INTO log_auditoria (
+            INSERT INTO `{$audit_table}` (
                 event_time,
                 db_user,
                 wp_user_id,
