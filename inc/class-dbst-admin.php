@@ -59,21 +59,21 @@ class DBST_Admin {
         $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'status';
         ?>
         <div class="wrap">
-            <h1>🔒 DB-SafeTrigger</h1>
-            <p>Plugin de Trazabilidad y Auditoría a Nivel de Base de Datos para WordPress</p>
+            <h1><?php _e('🔒 DB-SafeTrigger v1.1.0', 'db-safetrigger'); ?></h1>
+            <p><?php _e('Sistema de Auditoría y Trazabilidad de Base de Datos para WordPress', 'db-safetrigger'); ?></p>
             
             <nav class="nav-tab-wrapper">
                 <a href="?page=db-safetrigger&tab=status" class="nav-tab <?php echo $active_tab == 'status' ? 'nav-tab-active' : ''; ?>">
-                    Estado del Sistema
+                    <?php _e('Estado del Sistema', 'db-safetrigger'); ?>
                 </a>
                 <a href="?page=db-safetrigger&tab=mailjet" class="nav-tab <?php echo $active_tab == 'mailjet' ? 'nav-tab-active' : ''; ?>">
-                    Configuración Mailjet
+                    <?php _e('Configuración Mailjet', 'db-safetrigger'); ?>
                 </a>
                 <a href="?page=db-safetrigger&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">
-                    Configuración General
+                    <?php _e('Configuración General', 'db-safetrigger'); ?>
                 </a>
                 <a href="?page=db-safetrigger&tab=logs" class="nav-tab <?php echo $active_tab == 'logs' ? 'nav-tab-active' : ''; ?>">
-                    Logs Recientes
+                    <?php _e('Logs de Auditoría', 'db-safetrigger'); ?>
                 </a>
             </nav>
             
@@ -161,26 +161,26 @@ class DBST_Admin {
             // Test email
             $('#dbst-test-email').click(function() {
                 var $btn = $(this);
-                $btn.prop('disabled', true).text('Enviando...');
+                $btn.prop('disabled', true).text('<?php _e('Enviando...', 'db-safetrigger'); ?>');
                 
                 $.post(ajaxurl, {
                     action: 'dbst_test_email',
                     nonce: '<?php echo wp_create_nonce('dbst_admin_nonce'); ?>'
                 }, function(response) {
                     if(response.success) {
-                        alert('✅ Email de prueba enviado correctamente');
+                        alert('<?php _e('✅ Email de prueba enviado correctamente', 'db-safetrigger'); ?>');
                     } else {
-                        alert('❌ Error: ' + response.data);
+                        alert('<?php _e('❌ Error:', 'db-safetrigger'); ?> ' + response.data);
                     }
                 }).always(function() {
-                    $btn.prop('disabled', false).text('Enviar Email de Prueba');
+                    $btn.prop('disabled', false).text('<?php _e('Enviar Email de Prueba', 'db-safetrigger'); ?>');
                 });
             });
             
             // Verify triggers
             $('#dbst-verify-triggers').click(function() {
                 var $btn = $(this);
-                $btn.prop('disabled', true).text('Verificando...');
+                $btn.prop('disabled', true).text('<?php _e('Verificando...', 'db-safetrigger'); ?>');
                 
                 $.post(ajaxurl, {
                     action: 'dbst_verify_triggers',
@@ -189,29 +189,29 @@ class DBST_Admin {
                     if(response.success) {
                         location.reload();
                     } else {
-                        alert('❌ Error: ' + response.data);
+                        alert('<?php _e('❌ Error:', 'db-safetrigger'); ?> ' + response.data);
                     }
                 }).always(function() {
-                    $btn.prop('disabled', false).text('Verificar Triggers');
+                    $btn.prop('disabled', false).text('<?php _e('Verificar Triggers', 'db-safetrigger'); ?>');
                 });
             });
             
             // Test Mailjet
             $('#dbst-test-mailjet').click(function() {
                 var $btn = $(this);
-                $btn.prop('disabled', true).text('Probando...');
+                $btn.prop('disabled', true).text('<?php _e('Probando...', 'db-safetrigger'); ?>');
                 
                 $.post(ajaxurl, {
                     action: 'dbst_test_mailjet',
                     nonce: '<?php echo wp_create_nonce('dbst_admin_nonce'); ?>'
                 }, function(response) {
                     if(response.success) {
-                        alert('✅ Conexión Mailjet exitosa: ' + response.data);
+                        alert('<?php _e('✅ Conexión Mailjet exitosa:', 'db-safetrigger'); ?> ' + response.data);
                     } else {
-                        alert('❌ Error Mailjet: ' + response.data);
+                        alert('<?php _e('❌ Error Mailjet:', 'db-safetrigger'); ?> ' + response.data);
                     }
                 }).always(function() {
-                    $btn.prop('disabled', false).text('Probar Conexión');
+                    $btn.prop('disabled', false).text('<?php _e('Probar Conexión', 'db-safetrigger'); ?>');
                 });
             });
         });
@@ -226,99 +226,104 @@ class DBST_Admin {
         $system_status = $this->get_system_status();
         ?>
         <div class="dbst-status-card">
-            <h2>🔍 Estado del Sistema</h2>
+            <h2><?php _e('🔍 Estado del Sistema', 'db-safetrigger'); ?></h2>
+            <p><?php _e('Información general sobre el estado del sistema de auditoría.', 'db-safetrigger'); ?></p>
             
             <div class="dbst-status-grid">
                 <div>
-                    <h3>Base de Datos</h3>
+                    <h3><?php _e('Base de Datos', 'db-safetrigger'); ?></h3>
                     <div class="dbst-status-item">
-                        <span>Tabla {$audit_table}:</span>
+                        <span><?php _e('Tabla de Auditoría', 'db-safetrigger'); ?>:</span>
                         <span class="<?php echo $system_status['table_exists'] ? 'dbst-status-ok' : 'dbst-status-error'; ?>">
-                            <?php echo $system_status['table_exists'] ? '✅ Existe' : '❌ No existe'; ?>
+                            <?php echo $system_status['table_exists'] ? __('✅ Configurada correctamente', 'db-safetrigger') : __('❌ No encontrada', 'db-safetrigger'); ?>
                         </span>
                     </div>
                     <div class="dbst-status-item">
-                        <span>Soporte JSON:</span>
+                        <span><?php _e('Soporte JSON:', 'db-safetrigger'); ?></span>
                         <span class="<?php echo $system_status['json_support'] ? 'dbst-status-ok' : 'dbst-status-warning'; ?>">
-                            <?php echo $system_status['json_support'] ? '✅ Disponible' : '⚠️ LONGTEXT'; ?>
+                            <?php echo $system_status['json_support'] ? __('✅ Disponible', 'db-safetrigger') : __('⚠️ LONGTEXT', 'db-safetrigger'); ?>
                         </span>
                     </div>
                     <div class="dbst-status-item">
-                        <span>Privilegios TRIGGER:</span>
+                        <span><?php _e('Privilegios TRIGGER:', 'db-safetrigger'); ?></span>
                         <span class="<?php echo $system_status['trigger_privileges'] ? 'dbst-status-ok' : 'dbst-status-error'; ?>">
-                            <?php echo $system_status['trigger_privileges'] ? '✅ Disponibles' : '❌ Sin privilegios'; ?>
+                            <?php echo $system_status['trigger_privileges'] ? __('✅ Disponibles', 'db-safetrigger') : __('❌ Sin privilegios', 'db-safetrigger'); ?>
                         </span>
                     </div>
                     <div class="dbst-status-item">
-                        <span>Total registros hoy:</span>
+                        <span><?php _e('Total de Logs', 'db-safetrigger'); ?>:</span>
                         <span class="dbst-status-ok"><?php echo $system_status['today_events']; ?></span>
+                        <small><?php _e('Desde el inicio', 'db-safetrigger'); ?></small>
                     </div>
                 </div>
                 
                 <div>
-                    <h3>Triggers Activos</h3>
+                    <h3><?php _e('Triggers Activos', 'db-safetrigger'); ?></h3>
                     <?php foreach($system_status['triggers'] as $trigger => $status): ?>
                     <div class="dbst-status-item">
                         <span><?php echo esc_html($trigger); ?>:</span>
                         <span class="<?php echo $status ? 'dbst-status-ok' : 'dbst-status-error'; ?>">
-                            <?php echo $status ? '✅ Activo' : '❌ Inactivo'; ?>
+                            <?php echo $status ? __('✅ Activo', 'db-safetrigger') : __('❌ Inactivo', 'db-safetrigger'); ?>
                         </span>
                     </div>
                     <?php endforeach; ?>
+                    <?php if (array_sum($system_status['triggers']) === 0): ?>
+                    <p class="description"><?php _e('Triggers no configurados', 'db-safetrigger'); ?></p>
+                    <?php endif; ?>
                 </div>
             </div>
             
             <div class="dbst-status-grid">
                 <div>
-                    <h3>Sistema de Emails</h3>
+                    <h3><?php _e('Sistema de Emails', 'db-safetrigger'); ?></h3>
                     <div class="dbst-status-item">
-                        <span>Mailjet configurado:</span>
+                        <span><?php _e('Mailjet configurado:', 'db-safetrigger'); ?></span>
                         <span class="<?php echo $system_status['mailjet_configured'] ? 'dbst-status-ok' : 'dbst-status-warning'; ?>">
-                            <?php echo $system_status['mailjet_configured'] ? '✅ Sí' : '⚠️ No'; ?>
+                            <?php echo $system_status['mailjet_configured'] ? __('✅ Configurado', 'db-safetrigger') : __('⚠️ No configurado', 'db-safetrigger'); ?>
                         </span>
                     </div>
                     <div class="dbst-status-item">
-                        <span>Último reporte:</span>
-                        <span><?php echo $system_status['last_report'] ?: 'Nunca'; ?></span>
+                        <span><?php _e('Último reporte:', 'db-safetrigger'); ?></span>
+                        <span><?php echo $system_status['last_report'] ?: __('Nunca', 'db-safetrigger'); ?></span>
                     </div>
                     <div class="dbst-status-item">
-                        <span>Método usado:</span>
+                        <span><?php _e('Método usado:', 'db-safetrigger'); ?></span>
                         <span><?php echo $system_status['email_method'] ?: 'N/A'; ?></span>
                     </div>
                     <div class="dbst-status-item">
-                        <span>Próximo cron:</span>
-                        <span><?php echo $system_status['next_cron'] ? date('Y-m-d H:i:s', $system_status['next_cron']) : 'No programado'; ?></span>
+                        <span><?php _e('Próximo cron:', 'db-safetrigger'); ?></span>
+                        <span><?php echo $system_status['next_cron'] ? date('Y-m-d H:i:s', $system_status['next_cron']) : __('No programado', 'db-safetrigger'); ?></span>
                     </div>
                 </div>
                 
                 <div>
-                    <h3>Errores y Alertas</h3>
+                    <h3><?php _e('Errores y Alertas', 'db-safetrigger'); ?></h3>
                     <?php if($system_status['last_sql_error']): ?>
                     <div class="notice notice-error">
-                        <p><strong>Último error SQL:</strong></p>
+                        <p><strong><?php _e('Último error SQL:', 'db-safetrigger'); ?></strong></p>
                         <code><?php echo esc_html($system_status['last_sql_error']); ?></code>
                     </div>
                     <?php endif; ?>
                     
                     <?php if($system_status['last_mailjet_error']): ?>
                     <div class="notice notice-error">
-                        <p><strong>Último error Mailjet:</strong></p>
+                        <p><strong><?php _e('Último error Mailjet:', 'db-safetrigger'); ?></strong></p>
                         <code><?php echo esc_html($system_status['last_mailjet_error']); ?></code>
                     </div>
                     <?php endif; ?>
                     
                     <?php if(!$system_status['last_sql_error'] && !$system_status['last_mailjet_error']): ?>
                     <div class="notice notice-success">
-                        <p>✅ Sin errores reportados</p>
+                        <p><?php _e('✅ Sin errores reportados', 'db-safetrigger'); ?></p>
                     </div>
                     <?php endif; ?>
                 </div>
             </div>
             
             <div class="dbst-button-group">
-                <button id="dbst-test-email" class="button button-secondary">Enviar Email de Prueba</button>
-                <button id="dbst-verify-triggers" class="button button-secondary">Verificar Triggers</button>
-                <a href="<?php echo admin_url('tools.php?page=db-safetrigger&tab=logs'); ?>" class="button">Ver Logs Detallados</a>
+                <button id="dbst-test-email" class="button button-secondary"><?php _e('Enviar Email de Prueba', 'db-safetrigger'); ?></button>
+                <button id="dbst-verify-triggers" class="button button-secondary"><?php _e('Verificar Triggers', 'db-safetrigger'); ?></button>
+                <a href="<?php echo admin_url('tools.php?page=db-safetrigger&tab=logs'); ?>" class="button"><?php _e('Ver Logs Detallados', 'db-safetrigger'); ?></a>
             </div>
         </div>
         <?php
@@ -337,49 +342,49 @@ class DBST_Admin {
             update_option('dbst_mailjet_from_name', sanitize_text_field($_POST['dbst_mailjet_from_name']));
             update_option('dbst_mailjet_sandbox_mode', isset($_POST['dbst_mailjet_sandbox_mode']) ? 1 : 0);
             
-            echo '<div class="notice notice-success"><p>Configuración guardada correctamente.</p></div>';
+            echo '<div class="notice notice-success"><p>' . __('✅ Configuración de Mailjet guardada correctamente.', 'db-safetrigger') . '</p></div>';
         }
         ?>
         <div class="dbst-status-card">
-            <h2>📧 Configuración Mailjet API v3.1</h2>
-            <p>Configure sus credenciales de Mailjet para mejorar la entrega de emails de auditoría.</p>
+            <h2><?php _e('📧 Configuración Mailjet API v3.1', 'db-safetrigger'); ?></h2>
+            <p><?php _e('Configura el sistema de envío de reportes por email usando Mailjet API.', 'db-safetrigger'); ?></p>
             
             <form method="post">
                 <?php wp_nonce_field('dbst_mailjet_settings'); ?>
                 
                 <table class="form-table">
                     <tr>
-                        <th scope="row">API Key (Pública)</th>
+                        <th scope="row"><?php _e('API Key', 'db-safetrigger'); ?></th>
                         <td>
                             <input type="text" 
                                    name="dbst_mailjet_api_key" 
                                    value="<?php echo esc_attr(get_option('dbst_mailjet_api_key')); ?>" 
                                    class="regular-text" />
-                            <p class="description">Obténgala en <a href="https://app.mailjet.com/account/api_keys" target="_blank">Mailjet API Keys</a></p>
+                            <p class="description"><?php printf(__('Obténgala en %s', 'db-safetrigger'), '<a href="https://app.mailjet.com/account/api_keys" target="_blank">Mailjet API Keys</a>'); ?></p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Secret Key (Privada)</th>
+                        <th scope="row"><?php _e('Secret Key', 'db-safetrigger'); ?></th>
                         <td>
                             <input type="password" 
                                    name="dbst_mailjet_secret_key" 
                                    value="<?php echo esc_attr(get_option('dbst_mailjet_secret_key')); ?>" 
                                    class="regular-text" />
-                            <p class="description">Mantenga esta clave segura y privada</p>
+                            <p class="description"><?php _e('Mantenga esta clave segura y privada', 'db-safetrigger'); ?></p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Email Remitente</th>
+                        <th scope="row"><?php _e('Email Remitente', 'db-safetrigger'); ?></th>
                         <td>
                             <input type="email" 
                                    name="dbst_mailjet_from_email" 
                                    value="<?php echo esc_attr(get_option('dbst_mailjet_from_email')); ?>" 
                                    class="regular-text" />
-                            <p class="description">Debe ser un email verificado en Mailjet</p>
+                            <p class="description"><?php _e('Debe ser un email verificado en Mailjet', 'db-safetrigger'); ?></p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Nombre Remitente</th>
+                        <th scope="row"><?php _e('Nombre Remitente', 'db-safetrigger'); ?></th>
                         <td>
                             <input type="text" 
                                    name="dbst_mailjet_from_name" 
@@ -388,37 +393,37 @@ class DBST_Admin {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Modo Sandbox</th>
+                        <th scope="row"><?php _e('Modo Sandbox', 'db-safetrigger'); ?></th>
                         <td>
                             <label>
                                 <input type="checkbox" 
                                        name="dbst_mailjet_sandbox_mode" 
                                        value="1" 
                                        <?php checked(get_option('dbst_mailjet_sandbox_mode'), 1); ?> />
-                                Activar modo de prueba (no envía emails reales)
+                                <?php _e('Activar modo de prueba (no envía emails reales)', 'db-safetrigger'); ?>
                             </label>
                         </td>
                     </tr>
                 </table>
                 
                 <div class="dbst-button-group">
-                    <?php submit_button('Guardar Configuración', 'primary', 'submit', false); ?>
-                    <button type="button" id="dbst-test-mailjet" class="button button-secondary">Probar Conexión</button>
+                    <?php submit_button(__('Guardar Configuración', 'db-safetrigger'), 'primary', 'submit', false); ?>
+                    <button type="button" id="dbst-test-mailjet" class="button button-secondary"><?php _e('Probar Conexión', 'db-safetrigger'); ?></button>
                 </div>
             </form>
             
             <div class="dbst-status-card">
-                <h3>🔗 Información de la API</h3>
-                <p>DB-SafeTrigger utiliza <strong>Mailjet Send API v3.1</strong> con las siguientes características:</p>
+                <h3><?php _e('🔗 Información de la API', 'db-safetrigger'); ?></h3>
+                <p><?php _e('DB-SafeTrigger utiliza Mailjet Send API v3.1 con las siguientes características:', 'db-safetrigger'); ?></p>
                 <ul>
-                    <li>✅ Mejor reporte de errores y experiencia de desarrollador</li>
-                    <li>✅ CustomID y CustomCampaign para tracking</li>
-                    <li>✅ Headers personalizados para identificación</li>
-                    <li>✅ URLTags automático para analytics (UTM)</li>
-                    <li>✅ Modo Sandbox para pruebas sin envío real</li>
+                    <li><?php _e('✅ Mejor reporte de errores y experiencia de desarrollador', 'db-safetrigger'); ?></li>
+                    <li><?php _e('✅ CustomID y CustomCampaign para tracking', 'db-safetrigger'); ?></li>
+                    <li><?php _e('✅ Headers personalizados para identificación', 'db-safetrigger'); ?></li>
+                    <li><?php _e('✅ URLTags automático para analytics (UTM)', 'db-safetrigger'); ?></li>
+                    <li><?php _e('✅ Modo Sandbox para pruebas sin envío real', 'db-safetrigger'); ?></li>
                 </ul>
                 
-                <p><strong>Endpoint utilizado:</strong> <code>https://api.mailjet.com/v3.1/send</code></p>
+                <p><strong><?php _e('Endpoint utilizado:', 'db-safetrigger'); ?></strong> <code>https://api.mailjet.com/v3.1/send</code></p>
             </div>
         </div>
         <?php
@@ -434,35 +439,35 @@ class DBST_Admin {
             update_option('dbst_admin_email', sanitize_email($_POST['dbst_admin_email']));
             update_option('dbst_daily_report_enabled', isset($_POST['dbst_daily_report_enabled']) ? 1 : 0);
             
-            echo '<div class="notice notice-success"><p>Configuración guardada correctamente.</p></div>';
+            echo '<div class="notice notice-success"><p>' . __('✅ Configuración guardada correctamente.', 'db-safetrigger') . '</p></div>';
         }
         ?>
         <div class="dbst-status-card">
-            <h2>⚙️ Configuración General</h2>
+            <h2><?php _e('⚙️ Configuración General', 'db-safetrigger'); ?></h2>
             
             <form method="post">
                 <?php wp_nonce_field('dbst_general_settings'); ?>
                 
                 <table class="form-table">
                     <tr>
-                        <th scope="row">Email del Administrador</th>
+                        <th scope="row"><?php _e('Email del Administrador', 'db-safetrigger'); ?></th>
                         <td>
                             <input type="email" 
                                    name="dbst_admin_email" 
                                    value="<?php echo esc_attr(get_option('dbst_admin_email', get_option('admin_email'))); ?>" 
                                    class="regular-text" />
-                            <p class="description">Email donde se enviarán los reportes diarios</p>
+                            <p class="description"><?php _e('Email donde se enviarán los reportes diarios', 'db-safetrigger'); ?></p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Reporte Diario</th>
+                        <th scope="row"><?php _e('Reporte Diario', 'db-safetrigger'); ?></th>
                         <td>
                             <label>
                                 <input type="checkbox" 
                                        name="dbst_daily_report_enabled" 
                                        value="1" 
                                        <?php checked(get_option('dbst_daily_report_enabled', 1), 1); ?> />
-                                Enviar reporte diario de auditoría
+                                <?php _e('Enviar reporte diario de auditoría', 'db-safetrigger'); ?>
                             </label>
                         </td>
                     </tr>
@@ -544,7 +549,7 @@ class DBST_Admin {
         
         ?>
         <div class="dbst-status-card">
-            <h2>📋 Logs de Auditoría Recientes</h2>
+            <h2><?php _e('📋 Logs de Auditoría', 'db-safetrigger'); ?></h2>
             
             <!-- Filtros -->
             <div class="dbst-filters" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px;">
@@ -553,9 +558,9 @@ class DBST_Admin {
                     <input type="hidden" name="tab" value="logs">
                     
                     <div>
-                        <label for="user_id"><strong>Usuario:</strong></label><br>
+                        <label for="user_id"><strong><?php _e('Usuario WordPress:', 'db-safetrigger'); ?></strong></label><br>
                         <select name="user_id" id="user_id">
-                            <option value="0">Todos los usuarios</option>
+                            <option value="0"><?php _e('Todos los usuarios', 'db-safetrigger'); ?></option>
                             <?php foreach($users_with_logs as $user): ?>
                                 <option value="<?php echo $user->ID; ?>" <?php selected($user_filter, $user->ID); ?>>
                                     <?php echo esc_html($user->display_name . ' (' . $user->user_login . ')'); ?>
@@ -565,45 +570,45 @@ class DBST_Admin {
                     </div>
                     
                     <div>
-                        <label for="action_filter"><strong>Acción:</strong></label><br>
+                        <label for="action_filter"><strong><?php _e('Acción:', 'db-safetrigger'); ?></strong></label><br>
                         <select name="action_filter" id="action_filter">
-                            <option value="">Todas las acciones</option>
+                            <option value=""><?php _e('Todas las acciones', 'db-safetrigger'); ?></option>
                             <option value="UPDATE" <?php selected($action_filter, 'UPDATE'); ?>>UPDATE</option>
                             <option value="DELETE" <?php selected($action_filter, 'DELETE'); ?>>DELETE</option>
                         </select>
                     </div>
                     
                     <div>
-                        <label for="table_filter"><strong>Tabla:</strong></label><br>
+                        <label for="table_filter"><strong><?php _e('Tabla:', 'db-safetrigger'); ?></strong></label><br>
                         <select name="table_filter" id="table_filter">
-                            <option value="">Todas las tablas</option>
-                            <option value="posts" <?php selected($table_filter, 'posts'); ?>>Posts</option>
-                            <option value="users" <?php selected($table_filter, 'users'); ?>>Users</option>
-                            <option value="comments" <?php selected($table_filter, 'comments'); ?>>Comments</option>
+                            <option value=""><?php _e('Todas las tablas', 'db-safetrigger'); ?></option>
+                            <option value="posts" <?php selected($table_filter, 'posts'); ?>><?php _e('Posts', 'db-safetrigger'); ?></option>
+                            <option value="users" <?php selected($table_filter, 'users'); ?>><?php _e('Users', 'db-safetrigger'); ?></option>
+                            <option value="comments" <?php selected($table_filter, 'comments'); ?>><?php _e('Comments', 'db-safetrigger'); ?></option>
                         </select>
                     </div>
                     
                     <div>
-                        <button type="submit" class="button button-primary">Filtrar</button>
-                        <a href="?page=db-safetrigger&tab=logs" class="button">Limpiar filtros</a>
+                        <button type="submit" class="button button-primary"><?php _e('Filtrar', 'db-safetrigger'); ?></button>
+                        <a href="?page=db-safetrigger&tab=logs" class="button"><?php _e('Limpiar', 'db-safetrigger'); ?></a>
                     </div>
                 </form>
             </div>
             
             <?php if(empty($logs)): ?>
-                <p>No hay registros de auditoría disponibles con los filtros seleccionados.</p>
+                <p><?php _e('No se encontraron logs con los filtros aplicados.', 'db-safetrigger'); ?></p>
             <?php else: ?>
                 <div style="overflow-x: auto;">
                     <table class="dbst-log-table">
                         <thead>
                             <tr>
                                 <th>ID</th>
-                                <th>Fecha/Hora</th>
-                                <th>Usuario WordPress</th>
-                                <th>Tabla</th>
-                                <th>Acción</th>
+                                <th><?php _e('Fecha y Hora', 'db-safetrigger'); ?></th>
+                                <th><?php _e('Usuario WordPress:', 'db-safetrigger'); ?></th>
+                                <th><?php _e('Tabla:', 'db-safetrigger'); ?></th>
+                                <th><?php _e('Acción:', 'db-safetrigger'); ?></th>
                                 <th>PK</th>
-                                <th>Usuario BD</th>
+                                <th><?php _e('Usuario BD', 'db-safetrigger'); ?></th>
                                 <th>Host</th>
                             </tr>
                         </thead>
@@ -622,7 +627,7 @@ class DBST_Admin {
                                             </div>
                                         </div>
                                     <?php else: ?>
-                                        <span style="color: #999; font-style: italic;">Sistema/No identificado</span>
+                                        <span style="color: #999; font-style: italic;"><?php _e('Sistema', 'db-safetrigger'); ?>/<?php _e('No identificado', 'db-safetrigger'); ?></span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -645,7 +650,7 @@ class DBST_Admin {
                 </div>
                 
                 <p style="margin-top: 15px; color: #666;">
-                    <small>Mostrando los últimos <?php echo count($logs); ?> registros que coinciden con los filtros.</small>
+                    <small><?php printf(__('Mostrando los últimos %d registros que coinciden con los filtros.', 'db-safetrigger'), count($logs)); ?></small>
                 </p>
             <?php endif; ?>
             

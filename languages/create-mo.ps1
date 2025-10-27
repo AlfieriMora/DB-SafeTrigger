@@ -1,0 +1,24 @@
+# Script PowerShell para crear archivos .mo básicos
+
+# Crear archivo .mo básico válido
+$moHeader = @(
+    0xde, 0x12, 0x04, 0x95,  # Magic number
+    0x00, 0x00, 0x00, 0x00,  # Version
+    0x01, 0x00, 0x00, 0x00,  # Number of entries
+    0x1c, 0x00, 0x00, 0x00,  # Offset of key table
+    0x24, 0x00, 0x00, 0x00,  # Offset of value table  
+    0x00, 0x00, 0x00, 0x00,  # Hash table size
+    0x00, 0x00, 0x00, 0x00   # Hash table offset
+)
+
+$keyTable = @(0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00)
+$valueTable = @(0x00, 0x00, 0x00, 0x00, 0x2d, 0x00, 0x00, 0x00)
+$keysAndValues = @(0x00, 0x00)
+
+$moContent = $moHeader + $keyTable + $valueTable + $keysAndValues
+$bytes = [byte[]]$moContent
+
+[System.IO.File]::WriteAllBytes("$PWD\db-safetrigger-en_US.mo", $bytes)
+[System.IO.File]::WriteAllBytes("$PWD\db-safetrigger-es_ES.mo", $bytes)
+
+Write-Host "Archivos .mo creados correctamente"

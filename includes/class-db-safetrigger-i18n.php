@@ -22,4 +22,14 @@ class DB_SafeTrigger_i18n {
             dirname(dirname(plugin_basename(__FILE__))) . '/languages/'
         );
     }
+    
+    /**
+     * Inicializar la internacionalización
+     */
+    public static function init() {
+        $instance = new self();
+        // Cargar el textdomain lo antes posible para el admin
+        add_action('init', array($instance, 'load_plugin_textdomain'), 1);
+        add_action('admin_init', array($instance, 'load_plugin_textdomain'), 1);
+    }
 }

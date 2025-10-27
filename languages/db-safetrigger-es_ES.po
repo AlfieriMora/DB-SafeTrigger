@@ -1,0 +1,468 @@
+# DB-SafeTrigger Spanish Translation
+# Copyright (C) 2025
+# This file is distributed under the same license as the DB-SafeTrigger package.
+msgid ""
+msgstr ""
+"Project-Id-Version: DB-SafeTrigger 1.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-10-26 12:00+0000\n"
+"PO-Revision-Date: 2025-10-26 12:00+0000\n"
+"Last-Translator: Alfieri Mora\n"
+"Language-Team: Spanish\n"
+"Language: es_ES\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: db-safetrigger.php
+msgid "DB-SafeTrigger"
+msgstr "DB-SafeTrigger"
+
+#: db-safetrigger.php
+msgid "Sistema de Auditoría y Trazabilidad de Base de Datos para WordPress"
+msgstr "Sistema de Auditoría y Trazabilidad de Base de Datos para WordPress"
+
+#: db-safetrigger.php
+msgid "Estado del Sistema"
+msgstr "Estado del Sistema"
+
+#: db-safetrigger.php
+msgid "Gestión de Triggers"
+msgstr "Gestión de Triggers"
+
+#: db-safetrigger.php
+msgid "Configuración Mailjet"
+msgstr "Configuración Mailjet"
+
+#: db-safetrigger.php
+msgid "Reportes"
+msgstr "Reportes"
+
+#: db-safetrigger.php
+msgid "Logs de Auditoría"
+msgstr "Logs de Auditoría"
+
+#: db-safetrigger.php
+msgid "DB-SafeTrigger v1.1.0"
+msgstr "DB-SafeTrigger v1.1.0"
+
+#: db-safetrigger.php
+msgid "Información general sobre el estado del sistema de auditoría."
+msgstr "Información general sobre el estado del sistema de auditoría."
+
+#: db-safetrigger.php
+msgid "Tabla de Auditoría"
+msgstr "Tabla de Auditoría"
+
+#: db-safetrigger.php
+msgid "Configurada correctamente"
+msgstr "Configurada correctamente"
+
+#: db-safetrigger.php
+msgid "No encontrada"
+msgstr "No encontrada"
+
+#: db-safetrigger.php
+msgid "Triggers Activos"
+msgstr "Triggers Activos"
+
+#: db-safetrigger.php
+msgid "Sistema funcionando"
+msgstr "Sistema funcionando"
+
+#: db-safetrigger.php
+msgid "Triggers no configurados"
+msgstr "Triggers no configurados"
+
+#: db-safetrigger.php
+msgid "Total de Logs"
+msgstr "Total de Logs"
+
+#: db-safetrigger.php
+msgid "Desde el inicio"
+msgstr "Desde el inicio"
+
+#: db-safetrigger.php
+msgid "Logs Hoy"
+msgstr "Logs Hoy"
+
+#: db-safetrigger.php
+msgid "Triggers Configurados"
+msgstr "Triggers Configurados"
+
+#: db-safetrigger.php
+msgid "Tabla:"
+msgstr "Tabla:"
+
+#: db-safetrigger.php
+msgid "Evento:"
+msgstr "Evento:"
+
+#: db-safetrigger.php
+msgid "✅ Se eliminaron %d triggers correctamente."
+msgstr "✅ Se eliminaron %d triggers correctamente."
+
+#: db-safetrigger.php
+msgid "✅ Configuración de Mailjet guardada correctamente."
+msgstr "✅ Configuración de Mailjet guardada correctamente."
+
+#: db-safetrigger.php
+msgid "Gestión de Triggers de Auditoría"
+msgstr "Gestión de Triggers de Auditoría"
+
+#: db-safetrigger.php
+msgid "Administra y monitorea los triggers automáticos para la trazabilidad de datos."
+msgstr "Administra y monitorea los triggers automáticos para la trazabilidad de datos."
+
+#: db-safetrigger.php
+msgid "Control de Triggers"
+msgstr "Control de Triggers"
+
+#: db-safetrigger.php
+msgid "Crear/Actualizar Triggers"
+msgstr "Crear/Actualizar Triggers"
+
+#: db-safetrigger.php
+msgid "Eliminar Todos"
+msgstr "Eliminar Todos"
+
+#: db-safetrigger.php
+msgid "Estado de Monitoreo"
+msgstr "Estado de Monitoreo"
+
+#: db-safetrigger.php
+msgid "Activo"
+msgstr "Activo"
+
+#: db-safetrigger.php
+msgid "Inactivo"
+msgstr "Inactivo"
+
+#: db-safetrigger.php
+msgid "No hay triggers configurados"
+msgstr "No hay triggers configurados"
+
+#: db-safetrigger.php
+msgid "El sistema de auditoría no está activo. Configura los triggers para comenzar el monitoreo."
+msgstr "El sistema de auditoría no está activo. Configura los triggers para comenzar el monitoreo."
+
+#: db-safetrigger.php
+msgid "Configurar Triggers Ahora"
+msgstr "Configurar Triggers Ahora"
+
+#: db-safetrigger.php
+msgid "Configuración de Mailjet"
+msgstr "Configuración de Mailjet"
+
+#: db-safetrigger.php
+msgid "Configura el sistema de envío de reportes por email usando Mailjet API."
+msgstr "Configura el sistema de envío de reportes por email usando Mailjet API."
+
+#: db-safetrigger.php
+msgid "Credenciales de API"
+msgstr "Credenciales de API"
+
+#: db-safetrigger.php
+msgid "API Key"
+msgstr "Clave API"
+
+#: db-safetrigger.php
+msgid "Secret Key"
+msgstr "Clave Secreta"
+
+#: db-safetrigger.php
+msgid "Email Remitente"
+msgstr "Email Remitente"
+
+#: db-safetrigger.php
+msgid "Nombre del Remitente"
+msgstr "Nombre del Remitente"
+
+#: db-safetrigger.php
+msgid "Destinatarios de Reportes"
+msgstr "Destinatarios de Reportes"
+
+#: db-safetrigger.php
+msgid "Guardar Configuración"
+msgstr "Guardar Configuración"
+
+#: db-safetrigger.php
+msgid "Estado de la Configuración"
+msgstr "Estado de la Configuración"
+
+#: db-safetrigger.php
+msgid "Configurada"
+msgstr "Configurada"
+
+#: db-safetrigger.php
+msgid "No configurada"
+msgstr "No configurada"
+
+#: db-safetrigger.php
+msgid "Configurado"
+msgstr "Configurado"
+
+#: db-safetrigger.php
+msgid "Opcional"
+msgstr "Opcional"
+
+#: db-safetrigger.php
+msgid "Destinatarios"
+msgstr "Destinatarios"
+
+#: db-safetrigger.php
+msgid "configurados"
+msgstr "configurados"
+
+#: db-safetrigger.php
+msgid "Sistema Listo"
+msgstr "Sistema Listo"
+
+#: db-safetrigger.php
+msgid "Configuración Incompleta"
+msgstr "Configuración Incompleta"
+
+#: db-safetrigger.php
+msgid "Los reportes se pueden enviar"
+msgstr "Los reportes se pueden enviar"
+
+#: db-safetrigger.php
+msgid "Complete la configuración para enviar reportes"
+msgstr "Complete la configuración para enviar reportes"
+
+#: db-safetrigger.php
+msgid "Gestión de Reportes Avanzada"
+msgstr "Gestión de Reportes Avanzada"
+
+#: db-safetrigger.php
+msgid "Configura reportes automáticos personalizados y envía reportes instantáneos con los datos actuales."
+msgstr "Configura reportes automáticos personalizados y envía reportes instantáneos con los datos actuales."
+
+#: db-safetrigger.php
+msgid "Estadísticas de Hoy"
+msgstr "Estadísticas de Hoy"
+
+#: db-safetrigger.php
+msgid "Total Eventos"
+msgstr "Total Eventos"
+
+#: db-safetrigger.php
+msgid "Actualizaciones"
+msgstr "Actualizaciones"
+
+#: db-safetrigger.php
+msgid "Eliminaciones"
+msgstr "Eliminaciones"
+
+#: db-safetrigger.php
+msgid "Enviar Reporte Ahora"
+msgstr "Enviar Reporte Ahora"
+
+#: db-safetrigger.php
+msgid "Vista Previa"
+msgstr "Vista Previa"
+
+#: db-safetrigger.php
+msgid "Configuración de Reportes"
+msgstr "Configuración de Reportes"
+
+#: db-safetrigger.php
+msgid "Activar reportes automáticos"
+msgstr "Activar reportes automáticos"
+
+#: db-safetrigger.php
+msgid "Frecuencia:"
+msgstr "Frecuencia:"
+
+#: db-safetrigger.php
+msgid "Diario"
+msgstr "Diario"
+
+#: db-safetrigger.php
+msgid "Semanal"
+msgstr "Semanal"
+
+#: db-safetrigger.php
+msgid "Mensual"
+msgstr "Mensual"
+
+#: db-safetrigger.php
+msgid "Hora de envío:"
+msgstr "Hora de envío:"
+
+#: db-safetrigger.php
+msgid "Destinatarios (separados por comas):"
+msgstr "Destinatarios (separados por comas):"
+
+#: db-safetrigger.php
+msgid "Contenido del reporte:"
+msgstr "Contenido del reporte:"
+
+#: db-safetrigger.php
+msgid "Incluir resumen estadístico"
+msgstr "Incluir resumen estadístico"
+
+#: db-safetrigger.php
+msgid "Incluir detalles de eventos"
+msgstr "Incluir detalles de eventos"
+
+#: db-safetrigger.php
+msgid "Estado del Sistema de Reportes"
+msgstr "Estado del Sistema de Reportes"
+
+#: db-safetrigger.php
+msgid "Reportes Automáticos:"
+msgstr "Reportes Automáticos:"
+
+#: db-safetrigger.php
+msgid "Activados"
+msgstr "Activados"
+
+#: db-safetrigger.php
+msgid "Desactivados"
+msgstr "Desactivados"
+
+#: db-safetrigger.php
+msgid "Próximo Envío:"
+msgstr "Próximo Envío:"
+
+#: db-safetrigger.php
+msgid "No programado"
+msgstr "No programado"
+
+#: db-safetrigger.php
+msgid "Último Envío:"
+msgstr "Último Envío:"
+
+#: db-safetrigger.php
+msgid "Nunca"
+msgstr "Nunca"
+
+#: db-safetrigger.php
+msgid "Total Destinatarios:"
+msgstr "Total Destinatarios:"
+
+#: db-safetrigger.php
+msgid "Vista Previa del Reporte"
+msgstr "Vista Previa del Reporte"
+
+#: db-safetrigger.php
+msgid "Cerrar"
+msgstr "Cerrar"
+
+#: db-safetrigger.php
+msgid "Tabla de Auditoría No Encontrada"
+msgstr "Tabla de Auditoría No Encontrada"
+
+#: db-safetrigger.php
+msgid "Usuario WordPress:"
+msgstr "Usuario WordPress:"
+
+#: db-safetrigger.php
+msgid "Todos los usuarios"
+msgstr "Todos los usuarios"
+
+#: db-safetrigger.php
+msgid "Acción:"
+msgstr "Acción:"
+
+#: db-safetrigger.php
+msgid "Todas las acciones"
+msgstr "Todas las acciones"
+
+#: db-safetrigger.php
+msgid "Tabla:"
+msgstr "Tabla:"
+
+#: db-safetrigger.php
+msgid "Todas las tablas"
+msgstr "Todas las tablas"
+
+#: db-safetrigger.php
+msgid "Posts"
+msgstr "Entradas"
+
+#: db-safetrigger.php
+msgid "Users"
+msgstr "Usuarios"
+
+#: db-safetrigger.php
+msgid "Comments"
+msgstr "Comentarios"
+
+#: db-safetrigger.php
+msgid "Filtrar"
+msgstr "Filtrar"
+
+#: db-safetrigger.php
+msgid "Limpiar"
+msgstr "Limpiar"
+
+#: db-safetrigger.php
+msgid "Mostrando %d de %s registros"
+msgstr "Mostrando %d de %s registros"
+
+#: db-safetrigger.php
+msgid "Página %d de %d"
+msgstr "Página %d de %d"
+
+#: db-safetrigger.php
+msgid "No se encontraron logs con los filtros aplicados."
+msgstr "No se encontraron logs con los filtros aplicados."
+
+#: db-safetrigger.php
+msgid "Fecha y Hora"
+msgstr "Fecha y Hora"
+
+#: db-safetrigger.php
+msgid "Usuario BD"
+msgstr "Usuario BD"
+
+#: db-safetrigger.php
+msgid "Hoy"
+msgstr "Hoy"
+
+#: db-safetrigger.php
+msgid "Ayer"
+msgstr "Ayer"
+
+#: db-safetrigger.php
+msgid "%d días"
+msgstr "%d días"
+
+#: db-safetrigger.php
+msgid "Sistema"
+msgstr "Sistema"
+
+#: db-safetrigger.php
+msgid "No identificado"
+msgstr "No identificado"
+
+#: db-safetrigger.php
+msgid "Sistema de auditoría configurado exitosamente. El monitoreo está activo."
+msgstr "Sistema de auditoría configurado exitosamente. El monitoreo está activo."
+
+#: db-safetrigger.php
+msgid "Se produjeron algunos errores durante la configuración. Por favor, inténtalo nuevamente."
+msgstr "Se produjeron algunos errores durante la configuración. Por favor, inténtalo nuevamente."
+
+#: db-safetrigger.php
+msgid "No se pudieron crear los triggers. Verifica los permisos de la base de datos."
+msgstr "No se pudieron crear los triggers. Verifica los permisos de la base de datos."
+
+#: db-safetrigger.php
+msgid "Información de Idioma"
+msgstr "Información de Idioma"
+
+#: db-safetrigger.php
+msgid "Idioma actual:"
+msgstr "Idioma actual:"
+
+#: db-safetrigger.php
+msgid "Dominio de texto:"
+msgstr "Dominio de texto:"
+
+#: db-safetrigger.php
+msgid "Directorio de idiomas:"
+msgstr "Directorio de idiomas:"
